@@ -1,0 +1,194 @@
+NEXORA Signature — Universal Business Report Studio has been upgraded with all ten signature capabilities while preserving a single shared report data model and genuine @unlayer/react-elements rendering across all five export formats.
+Signature Capabilities Implemented
+Executive Intelligence Engine
+Deterministic financial rules compute growth, operating leverage, margin trajectory, unit economics, and concentration risk directly from reported figures.
+Every observation surfaces transparent ruleTriggered and formulaTrace attribution across the workspace and rendered reports.
+What-If Business Simulator
+Interactive levers (revenueDeltaPct, expenseDeltaPct, customerDeltaPct, arpuDeltaPct) and four scenario presets instantaneously model projected outcomes alongside an Actual vs. Simulated monthly SVG curve.
+Reported period actuals remain untouched, and optional report appendices are explicitly stamped Hypothetical What-If Projection — Non-Actual Scenario.
+Audience Transformation
+Generates Board Governance, CEO Operating, Investor & Capital, All-Hands Team, and Client & Partner editions from the same report tree.
+Dynamically adapts cover kickers, hero KPI emphasis (revenue, netProfit, margin, customers), section ordering, and cost-structure visibility (automatically redacting internal expenses in Client edition across Web, Email, Plain-Text, PDF, and PNG).
+Five-Format Live Preview
+Inspect Responsive Web HTML (<Page>), Email HTML (<Email>), Plain-Text Email (renderToPlainText), live Playwright A4 PDF (<Document>), and Playwright 2x Retina PNG (plus Print Markup & DesignJSON) directly inside the preview studio with desktop/mobile viewport toggles and side-by-side 3-theme comparison.
+Email Compatibility Lab
+Emulates Gmail Web (640px), Outlook Desktop, Apple Mail, and Mobile Email (375px) alongside deterministic checks for Gmail's 102 KB clipping threshold, zero <script> tags, MSO table structure, table-based sparklines, image alt-text coverage, and WCAG AA contrast ratios.
+Brand DNA Studio
+Configure validated company logos, logo frame geometry (rounded, square, circle), typography pairings, cover architecture overrides, accent colors, and governance disclosures across every output with a live identity specimen preview.
+Data Quality Guardian
+Runs 8 automated checks covering identity/periods, financial validity, monthly/category/segment reconciliation, strategic priority counts, and logo/color safety, with one-click total reconciliation actions in the editor and a pre-export gate in the Export Centre.
+Report Version Comparison
+Diffs your active workspace draft against saved snapshots or baseline datasets across KPI deltas, added/removed/modified revenue/expense/segment lines, metadata/edition changes, and narrative updates.
+Financial Storytelling
+Adds an Executive Story Arc connecting top-line momentum, quality of earnings, and forward strategic mandate alongside interactive SVG dual-series + net profit charts, verified observations, and recommendations.
+Premium Template Gallery
+Pairs three distinct executive design systems (Midnight Luxe, Editorial Ivory, Modern Signal) with the five stakeholder audience editions and five internally consistent illustrative industry presets.
+Verification & Deliverable Archive
+TypeScript & Production Build: tsc --noEmit and vite build completed with zero errors.
+Automated Test Suite: 20/20 Vitest tests passed (covering financial math, security sanitization, Data Quality Guardian, transparent insight rules, What-If non-actual boundaries, Audience Transformation & Client redaction, Brand DNA resolution, Email Compatibility Lab audit, Version Comparison, all 3 Unlayer themes/5 formats, Playwright A4 PDF & 2x PNG generation, and debounced/interruption auto-save).
+Playwright Headless E2E Check: Navigated all studio views including live PDF/PNG previews, Simulator presets, and Email Lab client tabs with zero console errors, zero page errors, and zero horizontal overflow at desktop (1440px) and mobile (390px).
+Project Archive: NEXORA-SIGNATURE-FINAL.zip (45 files, 147.8 KB, excluding node_modules and dist, preserving package.json and package-lock.json) was generated and verified clean in the workspace root (note: this chat interface does not support direct binary file attachments).
+Checkpoint
+Implement a 'Trend Analysis' module within the 'Executive Insights' section that compares current-period metrics against a rolling 3-month average to surface momentum signals.
+Gemini 4 Hydrogen
+Ran for 5m 11s
+
+Action history
+Thought for 10 seconds
+Read file
+Read 1 file: skills/system_skills/frontend_design/SKILL.md from line 0 to line 632
+Read file
+Read 2 files: src/core/intelligence.ts from line 0 to line 274, and src/core/calculations.ts
+Read file
+Read 2 files: src/core/calculations.ts from line 0 to line 251, and src/core/samples.ts from line 0 to line 554
+Thought for 8 seconds
+Read file
+Read 1 file: skills/system_skills/frontend_design/references/3_saas_dashboard.md from line 0 to line 121
+Read file
+Read 3 files: src/core/types.ts from line 0 to line 243,src/core/intelligence.ts from line 0 to line 274, and src/components/OverviewView.tsx
+Read file
+Read 3 files: src/components/OverviewView.tsx from line 0 to line 572,src/elements/tools.tsx, and src/elements/renderers.ts from line 0 to line 228
+Read file
+Read 2 files: src/elements/tools.tsx from line 0 to line 1353, and tests/nexora.test.ts from line 0 to line 393
+Read file
+Read 2 files: src/elements/tools.tsx, and src/elements/NexoraReportDocument.tsx
+Read file
+Read 3 files: src/elements/tools.tsx from line 829 to line 1353,src/elements/NexoraReportDocument.tsx from line 0 to line 576, and src/components/LiveStudioView.tsx from line 0 to line 425
+Read file
+Read 1 file: src/App.tsx from line 0 to line 256
+Read file
+Read 1 file: src/core/samples.ts from line 0 to line 249
+Thought for 26 seconds
+Read file
+Read 1 file: src/core/audiences.ts from line 0 to line 161
+Thought for 18 seconds
+Edited 1 file
+src/core/types.ts
+Thought for 46 seconds
+Edited 1 file
+src/core/intelligence.ts
+Thought for 38 seconds
+Edited 1 file
+src/elements/NexoraReportDocument.tsx
+Edited 2 files
+src/elements/tools.tsx
+src/elements/renderers.ts
+Thought for 21 seconds
+Edited 1 file
+src/components/TrendAnalysisPanel.tsx
+Thought for 11 seconds
+Edited 1 file
+src/components/OverviewView.tsx
+Thought for 12 seconds
+Edited 1 file
+tests/nexora.test.ts
+Built
+Ran quality control
+Ran command
+npm test
+> react-example@0.0.0 test> vitest run(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:  - `__dirname` (vite.config.ts:22:40). Use `import.meta.dirname` insteadSet `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.[1m[30m[46m RUN [49m[39m[22m [36mv5.1.1 [39m[90m/app/applet[39m [32m✓[39m tests/nexora.test.ts [2m([22m[2m22 tests[22m[2m)[22m[33m 4260[2mms[22m[39m   [32m✓[39m Unlayer Hyper Elements Multi-Format & Multi-Theme Rendering [2m(2)[22m     [33m[2m✓[22m[39m renders all 3 themes across Email HTML, Plain-Text, Web HTML, Print Document, Parts, and DesignJSON[33m 521[2mms[22m[39m   [32m✓[39m Playwright Chromium PDF & PNG Generation [2m(1)[22m     [33m[2m✓[22m[39m generates a real A4 PDF buffer and 2x PNG screenshot from the shared report model[33m 3313[2mms[22m[39m[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m[2m      Tests [22m [1m[32m22 passed[39m[22m[90m (22)[39m[2m   Start at [22m 10:53:53[2m   Duration [22m 5.94s[2m (tests 75%, import 17%, transform 7%)[22m
+Thought for 4 seconds
+Restarted dev server
+Thought for 10 seconds
+Ran command
+npx tsx -e " import { chromium } from 'playwright'; import fs from 'node:fs'; async function main() { const browser = await chromium.launch({ headless: true }); const errors: string[] = []; const context = await browser.newContext({ viewport: { width: 1440, height: 900 } }); const page = await context.newPage(); page.on('console', (msg) => { if (msg.type() === 'error') errors.push('CONSOLE: ' + msg.text()); }); page.on('pageerror', (err) => errors.push('PAGEERROR: ' + err.message)); await page.goto('http://localhost:3000', { waitUntil: 'networkidle' }); await page.getByRole('heading', { name: 'Executive Insights' }).waitFor({ timeout: 10000 }); const mod = page.getByTestId('trend-analysis-module'); await mod.waitFor(); const initialText = await mod.innerText(); if (!initialText.includes('Accelerating') || !initialText.includes('Jul 2026 – Sep 2026')) { throw new Error('Unexpected Veloce trend content: ' + initialText.slice(0, 300)); } // Test Basis Toggle await mod.getByRole('button', { name: 'Period Monthly Pace' }).click(); const paceText = await mod.innerText(); if (!paceText.includes('Period Monthly Pace')) { throw new Error('Basis toggle did not update header'); } await mod.getByRole('button', { name: /Latest Month/ }).click(); // Switch to Retail preset and confirm Decelerating momentum const retailRow = page.locator('div', { hasText: 'Aurelia Atelier Group' }).filter({ has: page.getByRole('button', { name: 'Load Sample' }) }).first(); await retailRow.getByRole('button', { name: 'Load Sample' }).click(); const retailText = await mod.innerText(); if (!retailText.includes('Decelerating') || !retailText.includes('Apr 2026 – Jun 2026')) { throw new Error('Expected Retail Decelerating trend, got: ' + retailText.slice(0, 300)); } // Switch to Client edition and confirm cost redaction await page.getByRole('button', { name: 'Client', exact: true }).click(); const clientText = await mod.innerText(); if (clientText.includes('Monthly Operating Expenses') || clientText.includes('Monthly Net Profit')) { throw new Error('Internal expense/profit trend metrics leaked in Client edition'); } if (!clientText.includes('Monthly Revenue Run-Rate')) { throw new Error('Revenue trend missing in Client edition'); } // Switch back to Board edition and check 5-Format Preview Web HTML + Email HTML + Plain-Text await page.getByRole('button', { name: 'Board', exact: true }).click(); await page.getByRole('button', { name: 'Open Live Preview' }).click(); await page.getByRole('heading', { name: 'Five-Format Live Report Studio' }).waitFor(); const webFrame = page.frameLocator('iframe[title=\"NEXORA web preview\"]'); await webFrame.locator('text=Trend Analysis').first().waitFor({ timeout: 10000 }); await page.getByRole('button', { name: '2. Email HTML' }).click(); const emailFrame = page.frameLocator('iframe[title=\"NEXORA email preview\"]'); await emailFrame.locator('text=Trend Analysis').first().waitFor({ timeout: 10000 }); await page.getByRole('button', { name: '3. Plain-Text' }).click(); const preText = await page.locator('pre').innerText(); if (!preText.includes('TREND ANALYSIS (CURRENT VS. ROLLING 3-MONTH AVG)')) { throw new Error('Plain-text preview missing Trend Analysis ledger'); } // Return to overview and verify desktop + mobile overflow await page.getByRole('button', { name: 'Studio Overview' }).click(); const desktopOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth); await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(200); const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth); await browser.close(); const hasZip = fs.existsSync('NEXORA-SIGNATURE-FINAL.zip'); console.log(JSON.stringify({ ok: true, desktopOverflow, mobileOverflow, errors, hasZip })); if (errors.length > 0 || desktopOverflow || mobileOverflow) { process.exit(1); } } main().catch((e) => { console.error(e); process.exit(1); }); "
+locator.click: Error: strict mode violation: locator('div').filter({ hasText: 'Aurelia Atelier Group' }).filter({ has: getByRole('button', { name: 'Load Sample' }) }).first().getByRole('button', { name: 'Load Sample' }) resolved to 4 elements:    1) <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">Load Sample</button> aka getByRole('button', { name: 'Load Sample' }).first()    2) <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">Load Sample</button> aka getByRole('button', { name: 'Load Sample' }).nth(1)    3) <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">Load Sample</button> aka getByRole('button', { name: 'Load Sample' }).nth(2)    4) <button type="button" class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0 border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">Load Sample</button> aka getByRole('button', { name: 'Load Sample' }).nth(3)Call log:  - waiting for locator('div').filter({ hasText: 'Aurelia Atelier Group' }).filter({ has: getByRole('button', { name: 'Load Sample' }) }).first().getByRole('button', { name: 'Load Sample' })    at main ([eval]:49:64) {  log: [    "  - waiting for locator('div').filter({ hasText: 'Aurelia Atelier Group' }).filter({ has: getByRole('button', { name: 'Load Sample' }) }).first().getByRole('button', { name: 'Load Sample' })"  ]}
+Thought for 7 seconds
+Ran command
+npx tsx -e " import { chromium } from 'playwright'; import fs from 'node:fs'; async function main() { const browser = await chromium.launch({ headless: true }); const errors: string[] = []; const context = await browser.newContext({ viewport: { width: 1440, height: 900 } }); const page = await context.newPage(); page.on('console', (msg) => { if (msg.type() === 'error') errors.push('CONSOLE: ' + msg.text()); }); page.on('pageerror', (err) => errors.push('PAGEERROR: ' + err.message)); await page.goto('http://localhost:3000', { waitUntil: 'networkidle' }); await page.getByRole('heading', { name: 'Executive Insights' }).waitFor({ timeout: 10000 }); const mod = page.getByTestId('trend-analysis-module'); await mod.waitFor(); const initialText = await mod.innerText(); if (!initialText.includes('Accelerating') || !initialText.includes('Jul 2026 – Sep 2026')) { throw new Error('Unexpected Veloce trend content: ' + initialText.slice(0, 300)); } // Test Basis Toggle await mod.getByRole('button', { name: 'Period Monthly Pace' }).click(); const paceText = await mod.innerText(); if (!paceText.includes('Period Monthly Pace')) { throw new Error('Basis toggle did not update header'); } await mod.getByRole('button', { name: /Latest Month/ }).click(); // Switch to Retail preset (Aurelia Atelier Group is the first 'Load Sample' button) await page.getByRole('button', { name: 'Load Sample' }).first().click(); const retailText = await mod.innerText(); if (!retailText.includes('Decelerating') || !retailText.includes('Apr 2026 – Jun 2026')) { throw new Error('Expected Retail Decelerating trend, got: ' + retailText.slice(0, 300)); } // Switch to Client edition and confirm cost redaction await page.getByRole('button', { name: 'Client', exact: true }).click(); const clientText = await mod.innerText(); if (clientText.includes('Monthly Operating Expenses') || clientText.includes('Monthly Net Profit')) { throw new Error('Internal expense/profit trend metrics leaked in Client edition'); } if (!clientText.includes('Monthly Revenue Run-Rate')) { throw new Error('Revenue trend missing in Client edition'); } // Switch back to Board edition and check 5-Format Preview Web HTML + Email HTML + Plain-Text await page.getByRole('button', { name: 'Board', exact: true }).click(); await page.getByRole('button', { name: 'Open Live Preview' }).click(); await page.getByRole('heading', { name: 'Five-Format Live Report Studio' }).waitFor(); const webFrame = page.frameLocator('iframe[title=\"NEXORA web preview\"]'); await webFrame.locator('text=Trend Analysis').first().waitFor({ timeout: 10000 }); await page.getByRole('button', { name: '2. Email HTML' }).click(); const emailFrame = page.frameLocator('iframe[title=\"NEXORA email preview\"]'); await emailFrame.locator('text=Trend Analysis').first().waitFor({ timeout: 10000 }); await page.getByRole('button', { name: '3. Plain-Text' }).click(); const preText = await page.locator('pre').innerText(); if (!preText.includes('TREND ANALYSIS (CURRENT VS. ROLLING 3-MONTH AVG)')) { throw new Error('Plain-text preview missing Trend Analysis ledger'); } // Return to overview and verify desktop + mobile overflow await page.getByRole('button', { name: 'Studio Overview' }).click(); await mod.waitFor(); const desktopOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth); await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(200); const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth); await browser.close(); const hasZip = fs.existsSync('NEXORA-SIGNATURE-FINAL.zip'); console.log(JSON.stringify({ ok: true, desktopOverflow, mobileOverflow, errors, hasZip })); if (errors.length > 0 || desktopOverflow || mobileOverflow) { process.exit(1); } } main().catch((e) => { console.error(e); process.exit(1); }); "
+{"ok":true,"desktopOverflow":false,"mobileOverflow":false,"errors":[],"hasZip":true}
+Thought for 3 seconds
+Ran command
+python3 -c " import os, zipfile archive = 'NEXORA-SIGNATURE-FINAL.zip' tmp = archive + '.tmp' exclude_dirs = {'node_modules', 'dist', '.git', '.aistudio'} with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zf: for root, dirs, files in os.walk('.'): dirs[:] = [d for d in sorted(dirs) if d not in exclude_dirs] for f in sorted(files): if f.endswith('.zip') or f.endswith('.zip.tmp'): continue full = os.path.join(root, f) arc = os.path.relpath(full, '.') zf.write(full, arc) with zipfile.ZipFile(tmp, 'r') as zf: bad = zf.testzip() if bad is not None: raise RuntimeError(f'Corrupt entry in archive: {bad}') count = len(zf.namelist()) os.replace(tmp, archive) print(f'Rebuilt {archive} with {count} verified entries.') "
+Rebuilt NEXORA-SIGNATURE-FINAL.zip with 46 verified entries.
+Implemented the Trend Analysis module inside the Executive Insights section, benchmarking current-period metrics against a rolling 3-month average to surface deterministic momentum signals across the studio workspace and all five @unlayer/react-elements output formats.
+Key Additions
+Deterministic Trend Analysis Engine (computeTrendAnalysis & filterTrendForAudience)
+Computes trailing 3-month rolling averages (windowMonthsCount up to 3, gracefully handling < 3 or empty monthly series and zero-value baselines without NaN or Infinity) alongside a month-by-month rolling moving-average series.
+Compares both Latest Month and Period Monthly Pace against the rolling 3-month baseline across Monthly Revenue Run-Rate, Monthly Operating Expenses, Monthly Net Profit, Net Profit Margin, and Active Customers (when present).
+Classifies each metric and overall trajectory into explicit momentum signals (Accelerating, Steady, Decelerating) paired with transparent formula traces and a dedicated Rolling 3-Month Momentum rule in generateExecutiveInsights.
+Automatically redacts internal cost, net profit, and net margin momentum when Client & Partner Edition is active.
+Interactive Executive Insights & Trend Analysis Workspace (OverviewView & TrendAnalysisPanel)
+Added a dedicated Executive Insights section featuring the Trend Analysis benchmark ledger, a toggle between Latest Month and Period Monthly Pace baselines, tabular numeric comparisons, month-by-month actual vs. rolling average trajectory bars, empty-state handling, and a shortcut to edit monthly series in Report Editor.
+Synchronized 5-Format Report Rendering
+Updated NexoraInsightsBlock (NexoraReportDocument & tools) and renderPlainTextEmail so Email HTML, Plain-Text Email, Responsive Web HTML, Playwright A4 PDF, and Playwright 2x PNG outputs all render the Trend Analysis (Rolling 3-Month Benchmark) section from the same ReportInputData model.
+Verification
+compile_applet & lint_applet (tsc --noEmit): Passed cleanly.
+npm test: All 22/22 Vitest tests passed (covering 3-month accelerating and 6-month decelerating rolling benchmarks, short/empty/zero-denominator series edge cases, Client edition redaction, multi-format Unlayer rendering, and Playwright PDF/PNG export).
+Playwright headless Chromium E2E check (1440×900 & 390×844): Verified live UI state updates across datasets, baseline toggle, Client cost redaction, and Web/Email/Plain-Text previews with 0 console errors, 0 page errors, and 0 horizontal overflow.
+NEXORA-SIGNATURE-FINAL.zip: Rebuilt with 46 verified entries (testzip() passed).
+Checkpoint
+I WANT TO CONTINUE FROM OUR PREVIOUS NEXORA SIGNATURE DEVELOPMENT. DO NOT START A NEW PROJECT.
+You already have the previous conversation context, requirements and project-development history. Use that context.
+IMPORTANT: I cannot upload my project ZIP in this chat. Find another way to continue working with the existing project.
+First, check whether you can access the NEXORA project files from the existing Build workspace or previous generated project.
+If the project files are available, continue developing them directly.
+If they are not available, explain how I can transfer the existing project into your Build workspace without losing the previous development work.
+MY PROJECT:
+NEXORA — Universal Business Report Studio.
+MY COMPETITION:
+Unlayer Hyper Elements Template Challenge.
+MY GOAL:
+Create an exceptionally polished, innovative and technically impressive competition entry.
+PRESERVE THE EXISTING FEATURES:
+Eight registered Hyper Elements custom tools.
+Midnight Luxe, Editorial Ivory and Modern Signal themes.
+Executive Intelligence Engine.
+What-If Business Simulator.
+Five audience editions.
+Five-format live preview.
+Email Compatibility Lab.
+Brand DNA Studio.
+Data Quality Guardian.
+Report Version Comparison.
+Financial Storytelling.
+Five industry sample reports.
+Email HTML export.
+Plain-text email export.
+Responsive web HTML export.
+PDF export.
+PNG export.
+NEXT DEVELOPMENT PRIORITIES:
+Fix Windows compatibility issues.
+Improve executive report design and typography.
+Improve financial charts and KPI presentation.
+Add executive presentation mode.
+Improve financial storytelling.
+Implement genuine export quality scoring.
+Verify all five export formats.
+Improve the template gallery.
+Improve README, screenshots and competition presentation.
+Verify genuine @unlayer/react-elements integration.
+IMPORTANT TECHNICAL REQUIREMENTS:
+Preserve the shared report data model.
+Preserve genuine Hyper Elements integration.
+Do not invent APIs.
+Do not replace Hyper Elements with ordinary HTML templates.
+Do not create fake functionality.
+Do not fabricate test results.
+Do not break existing working features.
+WORKING APPROACH:
+Work on the existing project, not a newly generated replacement.
+Complete all improvements in the same project workspace.
+Do not create separate ZIP files for individual phases.
+FINAL DELIVERY:
+I need ONE complete downloadable archive:
+NEXORA-SIGNATURE-FINAL.zip
+It must contain the entire finished project, package.json, package-lock.json, source code, tests, documentation, sample data and required assets.
+Exclude node_modules.
+Run all available tests and the production build. Verify all five exports.
+Do not claim the final ZIP exists until you have actually created and verified it.
+FIRST, tell me whether you can access my previous NEXORA project files in this conversation. Do not modify anything until you confirm.
+Gemini 4 Hydrogen
+Ran for 22s
+
+Action history
+Yes — all of your existing NEXORA Signature project files are directly accessible in this Build workspace. Nothing needs to be uploaded or transferred, and no files have been modified yet.
+Confirmed Workspace Contents
+Configuration & Packaging: package.json, package-lock.json, tsconfig.json, vite.config.ts, server.ts, README.md, and NEXORA-SIGNATURE-FINAL.zip
+Core Engines (src/core/): types.ts, calculations.ts, audiences.ts, intelligence.ts (including Trend Analysis), simulator.ts, emailAudit.ts, versionDiff.ts, validation.ts, security.ts, themes.ts, and samples.ts
+Hyper Elements Layer (src/elements/): tools.tsx (all 8 registered custom tools), NexoraReportDocument.tsx (<Email>, <Page>, <Document>), and renderers.ts (renderToHtml, renderToHtmlParts, renderToPlainText, renderToJson)
+UI Studio & Hooks (src/components/, src/hooks/, src/services/): OverviewView.tsx, TrendAnalysisPanel.tsx, ReportEditorView.tsx, LiveStudioView.tsx, EmailLabView.tsx, SimulatorView.tsx, VersionCompareView.tsx, TemplatesView.tsx, BrandingView.tsx, ExportCentreView.tsx, DataQualityPanel.tsx, TopBar.tsx, Sidebar.tsx, ToastBanner.tsx, useAutoSaveReport.ts, and storage.ts
+Automated Tests: tests/nexora.test.ts
+Confirm when you are ready, and I will proceed directly in this workspace through your 10 Next Development Priorities (Windows compatibility, report typography/design polish, financial charts/KPI refinement, Executive Presentation Mode, financial storytelling enhancements, genuine export quality scoring, template gallery upgrades, README/competition presentation, full verification of all 5 exports + build + tests, and delivering the updated NEXORA-SIGNATURE-FINAL.zip).
+Suggestions
