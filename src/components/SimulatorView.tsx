@@ -1,4 +1,5 @@
-import { AlertCircle, RotateCcw, Sliders } from 'lucide-react';
+import { AlertCircle, RotateCcw, ShieldCheck, Sliders } from 'lucide-react';
+import { getAudienceEdition } from '../core/audiences.ts';
 import { formatCurrency, formatNumber, formatPercent } from '../core/calculations.ts';
 import {
   DEFAULT_SIMULATION_ASSUMPTIONS,
@@ -17,6 +18,7 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
   const assumptions: SimulationAssumptions =
     report.simulation ?? DEFAULT_SIMULATION_ASSUMPTIONS;
   const projection = runWhatIfSimulation(report, assumptions);
+  const audience = getAudienceEdition(report.audienceEdition);
   const cur = report.currency;
 
   const updateSimulation = (patch: Partial<SimulationAssumptions>) => {
@@ -151,6 +153,18 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
           <span>Attach Labeled Appendix to Exports</span>
         </label>
       </div>
+
+      {/* Client Edition Guardrail Notice */}
+      {audience.redactInternalExpenses ? (
+        <div className="rounded-xl border border-cyan-300 bg-cyan-50 px-5 py-3 flex items-start gap-2.5 text-xs text-cyan-950">
+          <ShieldCheck className="h-4 w-4 text-[#0891B2] shrink-0 mt-0.5" />
+          <div>
+            <span className="font-semibold">Client &amp; Partner Edition Active: </span>
+            Internal operating expenses, net profit, and What-If projection appendices are
+            automatically withheld from all Client Edition previews, exports, and presentations.
+          </div>
+        </div>
+      ) : null}
 
       {/* Scenario Presets */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">

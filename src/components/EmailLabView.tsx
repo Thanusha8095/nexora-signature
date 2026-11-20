@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Mail, Smartphone, XCircle } from 'lucide-react';
 import { AUDIENCE_EDITION_LIST } from '../core/audiences.ts';
 import { auditEmailHtml, emulateEmailClientHtml } from '../core/emailAudit.ts';
@@ -47,8 +47,20 @@ const CLIENT_OPTIONS: {
 
 export function EmailLabView({ report, onSelectAudience, onGoToExport }: EmailLabViewProps) {
   const [client, setClient] = useState<EmailClientId>('gmail');
+  const [rawEmailHtml, setRawEmailHtml] = useState<string>('');
 
-  const rawEmailHtml = useMemo(() => renderEmailHtml(report), [report]);
+  useEffect(() => {
+    let cancelled = false;
+    renderEmailHtml(report)
+      .then((html) => {
+        if (!cancelled) setRawEmailHtml(html);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [report]);
+
   const audit = useMemo(() => auditEmailHtml(rawEmailHtml, report), [rawEmailHtml, report]);
   const emulatedHtml = useMemo(
     () => emulateEmailClientHtml(rawEmailHtml, client),
@@ -63,7 +75,7 @@ export function EmailLabView({ report, onSelectAudience, onGoToExport }: EmailLa
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-5 border-b border-slate-200">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-[#0891B2]">
-            @unlayer/react-elements &lt;Email&gt; Output Verification
+            @hyper-elements/react &lt;Email&gt; Output Verification
           </div>
           <h1 className="font-display text-2xl lg:text-3xl font-semibold text-[#0B1120] mt-1">
             Email Compatibility &amp; Accessibility Lab
@@ -141,10 +153,28 @@ export function EmailLabView({ report, onSelectAudience, onGoToExport }: EmailLa
             {passCount} / {audit.checks.length} Passed
           </div>
           <div className="text-[11px] text-slate-600 mt-1">
-            {audit.scriptTagCount} scripts · {audit.missingAltCount} missing alt attrs
+            {audit.scriptTagCount} scripts · {audit.missingAltCount} missing alt ·{' '}
+            {audit.inlineDataImageCount} inline data URI(s)
           </div>
         </div>
       </div>
+
+      {audit.inlineDataImageCount > 0 ? (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-300 bg-amber-50 px-5 py-3.5 flex items-start gap-3 text-xs text-amber-950"
+        >
+          <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+          <div className="leading-relaxed">
+            <span className="font-semibold">Gmail Delivery Recommendation:</span> Your email HTML
+            currently embeds {audit.inlineDataImageCount} inline{' '}
+            <code className="font-mono-num bg-amber-100/80 px-1 rounded">data:image/*</code> logo
+            URI. Gmail strips base64 and SVG data URIs on delivery. Replace it with a{' '}
+            <span className="font-semibold">hosted HTTPS PNG or JPEG URL</span> in{' '}
+            <span className="font-semibold">Brand DNA Studio</span> before sending bulk campaigns.
+          </div>
+        </div>
+      ) : null}
 
       {/* Main Split: Client Emulation & Audit Checks */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">

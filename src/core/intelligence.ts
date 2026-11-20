@@ -370,6 +370,40 @@ export function filterTrendForAudience(
   };
 }
 
+export function filterInsightsForAudience(
+  insights: ExecutiveInsight[],
+  filteredTrend: TrendAnalysisResult,
+  redactInternalExpenses: boolean
+): ExecutiveInsight[] {
+  if (!redactInternalExpenses) return insights;
+
+  return insights
+    .filter((ins) => ins.category !== 'Efficiency' && ins.category !== 'Profitability')
+    .map((ins) =>
+      ins.id === 'rolling-3m-momentum'
+        ? {
+            ...ins,
+            headline: filteredTrend.summaryHeadline,
+            explanation: filteredTrend.summaryNarrative,
+          }
+        : ins
+    );
+}
+
+export function filterRecommendationsForAudience(
+  recommendations: StrategicRecommendation[],
+  redactInternalExpenses: boolean
+): StrategicRecommendation[] {
+  if (!redactInternalExpenses) return recommendations;
+
+  return recommendations.filter(
+    (rec) =>
+      rec.id !== 'rec-cost-discipline' &&
+      rec.id !== 'rec-cadence' &&
+      rec.id !== 'rec-capital-reinvest'
+  );
+}
+
 export function generateExecutiveInsights(
   report: ReportInputData,
   metrics: ComputedMetrics

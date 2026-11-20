@@ -52,6 +52,22 @@ export function validateSafeImageDataUrl(dataUrl: string): { valid: boolean; err
     return { valid: true };
   }
 
+  // Allow safe HTTPS image URLs (recommended for Gmail and native PDF logo embedding)
+  if (/^https:\/\//i.test(trimmed)) {
+    if (trimmed.length > 2048) {
+      return { valid: false, error: 'Hosted HTTPS logo URL exceeds 2048 character limit.' };
+    }
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== 'https:' || !parsed.hostname) {
+        return { valid: false, error: 'Hosted logo URL must use a valid https:// host.' };
+      }
+      return { valid: true };
+    } catch {
+      return { valid: false, error: 'Invalid hosted HTTPS logo URL.' };
+    }
+  }
+
   if (trimmed.length > MAX_LOGO_BYTES * 1.4) {
     return { valid: false, error: 'Logo image exceeds 1.5 MB limit.' };
   }
@@ -60,7 +76,7 @@ export function validateSafeImageDataUrl(dataUrl: string): { valid: boolean; err
   if (!allowedPrefix.test(trimmed)) {
     return {
       valid: false,
-      error: 'Only PNG, JPEG, WEBP, or SVG data URIs are permitted for company logos.',
+      error: 'Only HTTPS image URLs or PNG, JPEG, WEBP, or SVG data URIs are permitted for company logos.',
     };
   }
 
@@ -101,7 +117,7 @@ function decodeBase64Utf8(b64: string): string {
 }
 
 /**
- * Basic HTML sanitizer for UnlayerProvider.toSafeHtml (strips scripts/event handlers/javascript: URIs)
+ * Basic HTML sanitizer (strips scripts, inline event handlers, and javascript: URIs)
  */
 export function toSafeHtmlBasic(html: string): string {
   if (!html) return '';

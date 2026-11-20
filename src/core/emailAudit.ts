@@ -16,6 +16,7 @@ export interface EmailAuditResult {
   tableCount: number;
   presentationTableCount: number;
   imgCount: number;
+  inlineDataImageCount: number;
   missingAltCount: number;
   scriptTagCount: number;
   contrastRatioPrimary: number;
@@ -69,6 +70,7 @@ export function auditEmailHtml(emailHtml: string, report: ReportInputData): Emai
   const tableMatches = emailHtml.match(/<table\b/gi) ?? [];
   const presentationMatches = emailHtml.match(/role=["']presentation["']/gi) ?? [];
   const imgTags = emailHtml.match(/<img\b[^>]*>/gi) ?? [];
+  const inlineDataImageCount = imgTags.filter((tag) => /\bsrc=["']data:image\//i.test(tag)).length;
   const missingAltCount = imgTags.filter((tag) => !/\balt=["'][^"']+["']/i.test(tag)).length;
   const scriptMatches = emailHtml.match(/<script\b/gi) ?? [];
   const hasMsoConditionals = /<!--\[if\s+mso/i.test(emailHtml) || /xmlns:v=/i.test(emailHtml);
@@ -90,6 +92,16 @@ export function auditEmailHtml(emailHtml: string, report: ReportInputData): Emai
         : `HTML payload is ${kbSize.toFixed(1)} KB, safely under Gmail's 102 KB clip ceiling.`,
     },
     {
+      id: 'gmail-inline-images',
+      label: 'Hosted HTTPS Logo vs. Inline Data URIs',
+      category: 'Gmail',
+      status: inlineDataImageCount > 0 ? 'warn' : 'pass',
+      detail:
+        inlineDataImageCount > 0
+          ? `Detected ${inlineDataImageCount} inline data:image/* image(s). Gmail strips embedded data:image/* and inline SVG URIs — set a hosted HTTPS PNG/JPEG logo URL in Brand DNA Studio before sending.`
+          : 'Zero inline data:image/* URIs detected; images use external HTTPS URLs compatible with Gmail and Outlook.',
+    },
+    {
       id: 'gmail-no-scripts',
       label: 'Zero Client Scripts in Email Markup',
       category: 'Gmail',
@@ -104,15 +116,15 @@ export function auditEmailHtml(emailHtml: string, report: ReportInputData): Emai
       label: 'Outlook VML/MSO Table Structure',
       category: 'Outlook',
       status: hasMsoConditionals && tableMatches.length > 0 ? 'pass' : 'warn',
-      detail: `Generated ${tableMatches.length} HTML tables (${presentationMatches.length} presentation roles) with Unlayer MSO conditional wrappers.`,
+      detail: `Generated ${tableMatches.length} HTML tables (${presentationMatches.length} presentation roles) with MSO conditional wrappers.`,
     },
     {
       id: 'outlook-sparklines',
-      label: 'Table-Based Sparklines (No SVG Dependency)',
+      label: 'Table-Based Unicode Sparklines (No SVG Dependency)',
       category: 'Outlook',
       status: hasSparklines ? 'pass' : 'warn',
       detail: hasSparklines
-        ? 'Monthly trajectories use nested HTML percentage tables rather than SVG for Outlook compatibility.'
+        ? 'Monthly trajectories use proportional Unicode block sparklines (█ / ▓) inside HTML table cells rather than inline SVG for Outlook compatibility.'
         : 'Monthly table sparkline block not detected.',
     },
     {
@@ -161,6 +173,7 @@ export function auditEmailHtml(emailHtml: string, report: ReportInputData): Emai
     tableCount: tableMatches.length,
     presentationTableCount: presentationMatches.length,
     imgCount: imgTags.length,
+    inlineDataImageCount,
     missingAltCount,
     scriptTagCount: scriptMatches.length,
     contrastRatioPrimary,

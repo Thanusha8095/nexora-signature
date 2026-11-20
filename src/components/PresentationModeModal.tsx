@@ -16,6 +16,8 @@ import {
 } from '../core/calculations.ts';
 import {
   computeTrendAnalysis,
+  filterInsightsForAudience,
+  filterRecommendationsForAudience,
   filterTrendForAudience,
   generateExecutiveInsights,
   generateStrategicRecommendations,
@@ -61,15 +63,21 @@ export function PresentationModeModal({
       ),
     [report, metrics, audience.redactInternalExpenses]
   );
-  const insights = useMemo(() => {
-    const raw = generateExecutiveInsights(report, metrics);
-    return audience.redactInternalExpenses
-      ? raw.filter((ins) => ins.category !== 'Efficiency' && ins.category !== 'Profitability')
-      : raw;
-  }, [report, metrics, audience.redactInternalExpenses]);
+  const rawInsights = useMemo(
+    () => generateExecutiveInsights(report, metrics),
+    [report, metrics]
+  );
+  const insights = useMemo(
+    () => filterInsightsForAudience(rawInsights, trend, audience.redactInternalExpenses),
+    [rawInsights, trend, audience.redactInternalExpenses]
+  );
   const recommendations = useMemo(
-    () => generateStrategicRecommendations(report, metrics, insights),
-    [report, metrics, insights]
+    () =>
+      filterRecommendationsForAudience(
+        generateStrategicRecommendations(report, metrics, rawInsights),
+        audience.redactInternalExpenses
+      ),
+    [report, metrics, rawInsights, audience.redactInternalExpenses]
   );
 
   const showSimulationSlide = Boolean(

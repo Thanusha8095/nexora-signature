@@ -2,9 +2,26 @@ export type ReportThemeId = 'midnight-luxe' | 'editorial-ivory' | 'modern-signal
 
 export type CurrencyCode = 'USD' | 'EUR' | 'GBP' | 'JPY' | 'CAD' | 'AUD' | 'INR' | 'SGD';
 
-export type ExportFormat = 'email-html' | 'plain-text' | 'web-html' | 'pdf' | 'png';
+export type ExportFormat =
+  | 'email-html'
+  | 'plain-text'
+  | 'web-html'
+  | 'pdf'
+  | 'native-pdf'
+  | 'png'
+  | 'canvas-png';
 
-export type PreviewMode = 'web' | 'email' | 'plain-text' | 'pdf' | 'png' | 'document' | 'json';
+export type PreviewMode =
+  | 'web'
+  | 'email'
+  | 'plain-text'
+  | 'pdf'
+  | 'native-pdf'
+  | 'png'
+  | 'canvas-png'
+  | 'canvas'
+  | 'document'
+  | 'json';
 
 export type AudienceEditionId = 'board' | 'ceo' | 'investor' | 'team' | 'client';
 
