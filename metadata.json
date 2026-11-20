@@ -1,6 +1,6 @@
 {
   "name": "NEXORA Signature",
-  "description": "Universal Business Report Studio powered by @unlayer/react-elements — one validated financial data model exported across Email HTML, Plain-Text Email, Responsive Web HTML, A4 PDF, and High-Resolution PNG.",
+  "description": "Universal Business Report Studio powered by @hyper-elements/react — one validated financial data model exported across Email HTML, Plain-Text Email, Responsive Web HTML, A4 PDF, and High-Resolution PNG.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

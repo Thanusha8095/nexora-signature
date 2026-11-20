@@ -16,7 +16,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { AUDIENCE_EDITION_LIST, getAudienceEdition } from '../core/audiences.ts';
+import { AUDIENCE_EDITION_LIST, getAudienceEdition, type AudienceEditionSpec } from '../core/audiences.ts';
 import {
   computeReportMetrics,
   formatCurrency,
@@ -25,15 +25,118 @@ import {
 } from '../core/calculations.ts';
 import {
   computeTrendAnalysis,
+  filterInsightsForAudience,
   filterTrendForAudience,
   generateExecutiveInsights,
 } from '../core/intelligence.ts';
 import { SAMPLE_REPORTS } from '../core/samples.ts';
 import { REPORT_THEMES } from '../core/themes.ts';
-import type { AudienceEditionId, ReportInputData, ValidationResult } from '../core/types.ts';
+import type {
+  AudienceEditionId,
+  ComputedMetrics,
+  ReportInputData,
+  ThemeSpec,
+  ValidationResult,
+} from '../core/types.ts';
 import type { SavedReportEntry } from '../services/storage.ts';
 import type { StudioTabId } from './TopBar.tsx';
 import { TrendAnalysisPanel } from './TrendAnalysisPanel.tsx';
+
+export interface OverviewKpiCard {
+  id: string;
+  label: string;
+  value: string;
+  sub: string;
+  emphasis?: boolean;
+}
+
+export function buildOverviewKpiCards(
+  report: ReportInputData,
+  metrics: ComputedMetrics,
+  audience: AudienceEditionSpec,
+  theme: ThemeSpec
+): OverviewKpiCard[] {
+  const cur = report.currency;
+
+  if (audience.redactInternalExpenses) {
+    return [
+      {
+        id: 'period-revenue',
+        label: 'Period Revenue',
+        value: formatCurrency(report.currentPeriod.revenue, cur),
+        sub: `${formatPercent(metrics.revenueGrowthPct, { signed: true })} vs ${report.previousPeriodLabel}`,
+      },
+      {
+        id: 'active-customers',
+        label: 'Active Customers',
+        value: formatNumber(report.currentPeriod.customerCount),
+        sub: `${formatPercent(metrics.customerGrowthPct, { signed: true })} vs ${report.previousPeriodLabel}`,
+      },
+      {
+        id: 'revenue-per-customer',
+        label: 'Revenue / Customer',
+        value:
+          metrics.revenuePerCustomer !== null
+            ? formatCurrency(metrics.revenuePerCustomer, cur)
+            : 'N/A',
+        sub: `${formatPercent(metrics.arpuGrowthPct, { signed: true })} ARPU shift`,
+      },
+      {
+        id: 'retention-delivery',
+        label: 'Client Delivery',
+        value:
+          report.currentPeriod.retentionRatePct !== undefined
+            ? `${report.currentPeriod.retentionRatePct.toFixed(1)}% Retention`
+            : metrics.healthStatus,
+        sub:
+          report.currentPeriod.npsScore !== undefined
+            ? `NPS ${report.currentPeriod.npsScore} · ${report.reportingPeriod}`
+            : report.reportingPeriod,
+      },
+      {
+        id: 'edition-governance',
+        label: 'Partner Trajectory',
+        value: metrics.healthStatus,
+        sub: `Internal costs redacted · ${theme.name}`,
+        emphasis: true,
+      },
+    ];
+  }
+
+  return [
+    {
+      id: 'period-revenue',
+      label: 'Period Revenue',
+      value: formatCurrency(report.currentPeriod.revenue, cur),
+      sub: `${formatPercent(metrics.revenueGrowthPct, { signed: true })} vs ${report.previousPeriodLabel}`,
+    },
+    {
+      id: 'operating-expenses',
+      label: 'Operating Expenses',
+      value: formatCurrency(report.currentPeriod.expenses, cur),
+      sub: `${formatPercent(metrics.expenseGrowthPct, { signed: true })} vs prior`,
+    },
+    {
+      id: 'net-profit',
+      label: 'Net Profit',
+      value: formatCurrency(metrics.netProfit, cur),
+      sub: `${formatPercent(metrics.profitGrowthPct, { signed: true })} vs prior`,
+    },
+    {
+      id: 'profit-margin',
+      label: 'Profit Margin',
+      value: formatPercent(metrics.profitMarginPct),
+      sub: `${metrics.marginDeltaPts >= 0 ? '+' : ''}${metrics.marginDeltaPts.toFixed(1)} pts shift`,
+    },
+    {
+      id: 'business-health',
+      label: 'Business Health',
+      value: metrics.healthStatus,
+      sub: `${formatNumber(report.currentPeriod.customerCount)} customers · ${theme.name}`,
+      emphasis: true,
+    },
+  ];
+}
 
 interface OverviewViewProps {
   report: ReportInputData;
@@ -70,9 +173,12 @@ export function OverviewView({
   const rawTrend = computeTrendAnalysis(report, metrics);
   const trendAnalysis = filterTrendForAudience(rawTrend, audience.redactInternalExpenses);
   const rawInsights = generateExecutiveInsights(report, metrics);
-  const insights = audience.redactInternalExpenses
-    ? rawInsights.filter((ins) => ins.category !== 'Efficiency' && ins.category !== 'Profitability')
-    : rawInsights;
+  const insights = filterInsightsForAudience(
+    rawInsights,
+    trendAnalysis,
+    audience.redactInternalExpenses
+  );
+  const kpiCards = buildOverviewKpiCards(report, metrics, audience, theme);
   const cur = report.currency;
 
   const qualityChecks = validation.checks ?? [];
@@ -81,32 +187,32 @@ export function OverviewView({
   const formatOutputs = [
     {
       name: 'Email HTML',
-      root: '<Email> · renderToHtml',
-      desc: 'Table-safe inline markup with table sparklines',
+      root: '<Email> · render()',
+      desc: 'Table-safe inline markup with email-safe sparklines',
       icon: Mail,
     },
     {
       name: 'Plain-Text Email',
-      root: '<Email> · renderToPlainText',
+      root: '<Email> · render().text',
       desc: 'Structured executive ledger for text clients',
       icon: FileText,
     },
     {
       name: 'Responsive Web',
-      root: '<Page> · renderToHtml',
-      desc: 'SVG charts with interactive hover tooltips',
+      root: '<Page> · render()',
+      desc: 'Native vector <Svg> charts with responsive grids',
       icon: Globe,
     },
     {
       name: 'A4 Executive PDF',
-      root: '<Document> · Playwright',
-      desc: 'Paginated print layout with page numbers',
+      root: '<Document> · Playwright & renderPdf',
+      desc: 'Paginated print layout with running headers and page numbers',
       icon: Printer,
     },
     {
       name: 'High-Res PNG',
-      root: '<Page> · Playwright 2x',
-      desc: 'Full-page Retina snapshot for slide decks',
+      root: '<Canvas> & <Page> · 2x PNG',
+      desc: 'Executive canvas & full-page Retina snapshots',
       icon: ImageIcon,
     },
   ];
@@ -341,52 +447,24 @@ export function OverviewView({
           </div>
         </div>
 
-        {/* 5 KPI Metrics Row */}
+        {/* 5 KPI Metrics Row (Client & Partner Edition automatically redacts OpEx, Net Profit & Margin) */}
         <div className="grid grid-cols-2 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x divide-slate-200">
-          <div className="p-5">
-            <div className="text-xs font-medium text-slate-500">Period Revenue</div>
-            <div className="font-mono-num text-xl font-semibold text-[#0B1120] mt-1.5">
-              {formatCurrency(report.currentPeriod.revenue, cur)}
+          {kpiCards.map((card, idx) => (
+            <div
+              key={card.id}
+              className={`p-5 ${idx === kpiCards.length - 1 ? 'col-span-2 md:col-span-1' : ''}`}
+            >
+              <div className="text-xs font-medium text-slate-500">{card.label}</div>
+              <div
+                className={`${
+                  card.emphasis ? 'text-base' : 'font-mono-num text-xl'
+                } font-semibold text-[#0B1120] mt-1.5`}
+              >
+                {card.value}
+              </div>
+              <div className="font-mono-num text-xs text-slate-600 mt-1">{card.sub}</div>
             </div>
-            <div className="font-mono-num text-xs text-slate-600 mt-1">
-              {formatPercent(metrics.revenueGrowthPct, { signed: true })} vs {report.previousPeriodLabel}
-            </div>
-          </div>
-          <div className="p-5">
-            <div className="text-xs font-medium text-slate-500">Operating Expenses</div>
-            <div className="font-mono-num text-xl font-semibold text-[#0B1120] mt-1.5">
-              {formatCurrency(report.currentPeriod.expenses, cur)}
-            </div>
-            <div className="font-mono-num text-xs text-slate-600 mt-1">
-              {formatPercent(metrics.expenseGrowthPct, { signed: true })} vs prior
-            </div>
-          </div>
-          <div className="p-5">
-            <div className="text-xs font-medium text-slate-500">Net Profit</div>
-            <div className="font-mono-num text-xl font-semibold text-[#0B1120] mt-1.5">
-              {formatCurrency(metrics.netProfit, cur)}
-            </div>
-            <div className="font-mono-num text-xs text-slate-600 mt-1">
-              {formatPercent(metrics.profitGrowthPct, { signed: true })} vs prior
-            </div>
-          </div>
-          <div className="p-5">
-            <div className="text-xs font-medium text-slate-500">Profit Margin</div>
-            <div className="font-mono-num text-xl font-semibold text-[#0B1120] mt-1.5">
-              {formatPercent(metrics.profitMarginPct)}
-            </div>
-            <div className="font-mono-num text-xs text-slate-600 mt-1">
-              {metrics.marginDeltaPts >= 0 ? '+' : ''}
-              {metrics.marginDeltaPts.toFixed(1)} pts shift
-            </div>
-          </div>
-          <div className="p-5 col-span-2 md:col-span-1">
-            <div className="text-xs font-medium text-slate-500">Business Health</div>
-            <div className="text-base font-semibold text-[#0B1120] mt-1.5">{metrics.healthStatus}</div>
-            <div className="font-mono-num text-xs text-slate-600 mt-1">
-              {formatNumber(report.currentPeriod.customerCount)} customers · {theme.name}
-            </div>
-          </div>
+          ))}
         </div>
       </section>
 
@@ -518,7 +596,7 @@ export function OverviewView({
               Five Synchronized Output Formats
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Every output renders from the same validated data tree via @unlayer/react-elements.
+              Every output renders from the same validated data tree via @hyper-elements/react.
             </p>
           </div>
           <button

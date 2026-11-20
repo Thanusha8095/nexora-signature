@@ -1,11 +1,10 @@
 import {
-  renderToHtml,
-  renderToHtmlParts,
-  renderToJson,
-  renderToPlainText,
-  type DesignJSON,
-  type HtmlParts,
-} from '@unlayer/react-elements';
+  render,
+  validate,
+  outline,
+  type Diagnostic,
+} from '@hyper-elements/react';
+import { toDesign, type Design } from '@hyper-elements/react/builder';
 import { getAudienceEdition } from '../core/audiences.ts';
 import {
   computeReportMetrics,
@@ -22,25 +21,27 @@ import {
 import { runWhatIfSimulation } from '../core/simulator.ts';
 import { resolveBrandTheme } from '../core/themes.ts';
 import type { ReportInputData } from '../core/types.ts';
-import { buildNexoraReportTree, type UnlayerRootMode } from './NexoraReportDocument.tsx';
+import { buildNexoraReportTree, type NexoraRootMode } from './NexoraReportDocument.tsx';
 
-function getThemeFonts(report: ReportInputData) {
+function injectHeadMarkup(html: string, extraHead: string): string {
+  if (!extraHead.trim()) return html;
+  if (html.includes('</head>')) {
+    return html.replace('</head>', `${extraHead}\n</head>`);
+  }
+  return `${extraHead}\n${html}`;
+}
+
+function googleFontsHeadLink(report: ReportInputData): string {
   const theme = resolveBrandTheme(report);
-  return [{ url: theme.typography.googleFontsUrl }];
+  return `<link rel="stylesheet" href="${theme.typography.googleFontsUrl}" />`;
 }
 
 /**
- * 1. Email HTML (via @unlayer/react-elements <Email> root + renderToHtml)
+ * 1. Email HTML (via @hyper-elements/react <Email> root + async render())
  */
-export function renderEmailHtml(report: ReportInputData): string {
+export async function renderEmailHtml(report: ReportInputData): Promise<string> {
   const element = buildNexoraReportTree(report, 'email');
-  const html = renderToHtml(element, {
-    mode: 'email',
-    title: `${report.branding.companyName} — ${report.title}`,
-    fonts: getThemeFonts(report),
-    lang: 'en',
-  });
-  // Email clients disallow client scripts; remove Unlayer tool head.js blocks and safely trim CSS/inter-tag whitespace to stay well below Gmail's 102 KB clip ceiling
+  const { html } = await render(element);
   return html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, (_m, attrs, css) => {
@@ -57,11 +58,11 @@ export function renderEmailHtml(report: ReportInputData): string {
 }
 
 /**
- * 2. Plain-Text Email (via @unlayer/react-elements renderToPlainText + structured executive ledger)
+ * 2. Plain-Text Email (via @hyper-elements/react async render().text + executive financial ledger)
  */
-export function renderPlainTextEmail(report: ReportInputData): string {
+export async function renderPlainTextEmail(report: ReportInputData): Promise<string> {
   const element = buildNexoraReportTree(report, 'email');
-  const unlayerText = renderToPlainText(element, { mode: 'email' });
+  const { text: hyperText } = await render(element);
   const metrics = computeReportMetrics(report);
   const audience = getAudienceEdition(report.audienceEdition);
   const trend = filterTrendForAudience(
@@ -184,37 +185,29 @@ export function renderPlainTextEmail(report: ReportInputData): string {
     ...(audience.showGovernanceDisclaimer ? [report.branding.disclaimer] : []),
   ];
 
-  void unlayerText;
+  void hyperText;
   return lines.join('\n');
 }
 
 /**
- * 3. Responsive Web HTML (via @unlayer/react-elements <Page> root + renderToHtml)
+ * 3. Responsive Web HTML (via @hyper-elements/react <Page> root + async render())
  */
-export function renderWebHtml(report: ReportInputData): string {
+export async function renderWebHtml(report: ReportInputData): Promise<string> {
   const element = buildNexoraReportTree(report, 'web');
-  return renderToHtml(element, {
-    mode: 'web',
-    title: `${report.branding.companyName} — ${report.title}`,
-    fonts: getThemeFonts(report),
-    lang: 'en',
-  });
+  const { html } = await render(element);
+  return injectHeadMarkup(html, googleFontsHeadLink(report));
 }
 
 /**
- * 4. Print-Ready Document HTML for Playwright A4 PDF (via @unlayer/react-elements <Document> root + renderToHtml)
+ * 4. Print-Ready Document HTML for Playwright A4 PDF & Browser Print Preview (via @hyper-elements/react <Document> + async render())
  */
-export function renderPrintDocumentHtml(report: ReportInputData): string {
+export async function renderPrintDocumentHtml(report: ReportInputData): Promise<string> {
   const theme = resolveBrandTheme(report);
   const element = buildNexoraReportTree(report, 'document');
-  const rawHtml = renderToHtml(element, {
-    mode: 'document',
-    title: `${report.branding.companyName} — ${report.title}`,
-    fonts: getThemeFonts(report),
-    lang: 'en',
-  });
+  const { html } = await render(element);
 
   const printCss = `
+    ${googleFontsHeadLink(report)}
     <style>
       @page {
         size: A4 portrait;
@@ -225,34 +218,63 @@ export function renderPrintDocumentHtml(report: ReportInputData): string {
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
       }
-      table, section, tr {
+      table, tr {
         break-inside: avoid;
         page-break-inside: avoid;
-      }
-      .nexora-tooltip-bar {
-        display: none !important;
       }
     </style>
   `;
 
-  return rawHtml.replace('</head>', `${printCss}</head>`);
+  return injectHeadMarkup(html, printCss);
 }
 
 /**
- * 5. Unlayer DesignJSON & HTML Parts helpers
+ * 5. Canvas Executive Card HTML preview (via @hyper-elements/react <Canvas> root)
+ */
+export async function renderCanvasHtml(report: ReportInputData): Promise<string> {
+  const element = buildNexoraReportTree(report, 'canvas');
+  const { html } = await render(element);
+  return injectHeadMarkup(html, googleFontsHeadLink(report));
+}
+
+/**
+ * 6. Builder DesignJSON & Async Render Parts & Validation Helpers (@hyper-elements/react/builder)
  */
 export function renderReportDesignJson(
   report: ReportInputData,
-  mode: UnlayerRootMode = 'web'
-): DesignJSON {
+  mode: Exclude<NexoraRootMode, 'canvas'> = 'web'
+): Design {
   const element = buildNexoraReportTree(report, mode);
-  return renderToJson(element);
+  return toDesign(element).design;
 }
 
-export function renderReportHtmlParts(
+export async function renderReportHtmlParts(
   report: ReportInputData,
-  mode: UnlayerRootMode = 'web'
-): HtmlParts {
+  mode: NexoraRootMode = 'web'
+): Promise<{ head: string; body: string; bodyStyle: string; text: string; diagnostics: Diagnostic[] }> {
   const element = buildNexoraReportTree(report, mode);
-  return renderToHtmlParts(element, { mode });
+  const res = await render(element);
+  return {
+    head: res.head,
+    body: res.body,
+    bodyStyle: res.bodyStyle,
+    text: res.text,
+    diagnostics: res.diagnostics,
+  };
+}
+
+export function validateReportElements(
+  report: ReportInputData,
+  mode: NexoraRootMode = 'web'
+) {
+  const element = buildNexoraReportTree(report, mode);
+  return validate(element);
+}
+
+export function outlineReportElements(
+  report: ReportInputData,
+  mode: NexoraRootMode = 'web'
+): string {
+  const element = buildNexoraReportTree(report, mode);
+  return outline(element);
 }

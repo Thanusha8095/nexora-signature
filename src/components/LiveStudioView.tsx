@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Columns, Download, Loader2, Monitor, Presentation, RefreshCw, Smartphone } from 'lucide-react';
 import { AUDIENCE_EDITION_LIST } from '../core/audiences.ts';
-import { scoreReportExports } from '../core/exportQuality.ts';
+import { scoreReportExports, type ExportQualityScorecard } from '../core/exportQuality.ts';
 import { THEME_LIST } from '../core/themes.ts';
 import type {
   AudienceEditionId,
   PreviewMode,
   ReportInputData,
   ReportThemeId,
+  ThemeSpec,
 } from '../core/types.ts';
 import {
+  renderCanvasHtml,
   renderEmailHtml,
   renderPlainTextEmail,
   renderPrintDocumentHtml,
@@ -25,6 +27,8 @@ interface LiveStudioViewProps {
   onOpenPresentation: () => void;
 }
 
+type BinaryPreviewKind = 'pdf' | 'native-pdf' | 'png' | 'canvas-png';
+
 export function LiveStudioView({
   report,
   onSelectTheme,
@@ -36,28 +40,38 @@ export function LiveStudioView({
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop');
   const [compareMode, setCompareMode] = useState(false);
 
-  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
-  const [pngBlobUrl, setPngBlobUrl] = useState<string | null>(null);
-  const [binaryLoading, setBinaryLoading] = useState<'pdf' | 'png' | null>(null);
-  const [binaryError, setBinaryError] = useState<string | null>(null);
-  const [binarySizeKb, setBinarySizeKb] = useState<number | null>(null);
+  const [renderedOutput, setRenderedOutput] = useState<string>('');
+  const [qualityScore, setQualityScore] = useState<ExportQualityScorecard | null>(null);
+  const [themeComparisons, setThemeComparisons] = useState<{ theme: ThemeSpec; html: string }[]>([]);
 
-  const pdfUrlRef = useRef<string | null>(null);
-  const pngUrlRef = useRef<string | null>(null);
+  const [binaryUrls, setBinaryUrls] = useState<Partial<Record<BinaryPreviewKind, string>>>({});
+  const [binarySizesKb, setBinarySizesKb] = useState<Partial<Record<BinaryPreviewKind, number>>>({});
+  const [binaryLoading, setBinaryLoading] = useState<BinaryPreviewKind | null>(null);
+  const [binaryError, setBinaryError] = useState<string | null>(null);
+
+  const binaryUrlsRef = useRef<Partial<Record<BinaryPreviewKind, string>>>({});
 
   useEffect(() => {
+    const urls = binaryUrlsRef.current;
     return () => {
-      if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
-      if (pngUrlRef.current) URL.revokeObjectURL(pngUrlRef.current);
+      Object.values(urls).forEach((u) => {
+        if (u) URL.revokeObjectURL(u);
+      });
     };
   }, []);
 
   const fetchBinaryPreview = useCallback(
-    async (kind: 'pdf' | 'png') => {
+    async (kind: BinaryPreviewKind) => {
       setBinaryLoading(kind);
       setBinaryError(null);
       try {
-        const endpoint = kind === 'pdf' ? '/api/export/pdf' : '/api/export/png';
+        const endpointMap: Record<BinaryPreviewKind, string> = {
+          pdf: '/api/export/pdf',
+          'native-pdf': '/api/export/native-pdf',
+          png: '/api/export/png',
+          'canvas-png': '/api/export/canvas-png',
+        };
+        const endpoint = endpointMap[kind];
         const resp = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -72,17 +86,12 @@ export function LiveStudioView({
         }
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
-        setBinarySizeKb(blob.size / 1024);
+        const prev = binaryUrlsRef.current[kind];
+        if (prev) URL.revokeObjectURL(prev);
+        binaryUrlsRef.current[kind] = url;
 
-        if (kind === 'pdf') {
-          if (pdfUrlRef.current) URL.revokeObjectURL(pdfUrlRef.current);
-          pdfUrlRef.current = url;
-          setPdfBlobUrl(url);
-        } else {
-          if (pngUrlRef.current) URL.revokeObjectURL(pngUrlRef.current);
-          pngUrlRef.current = url;
-          setPngBlobUrl(url);
-        }
+        setBinaryUrls((curr) => ({ ...curr, [kind]: url }));
+        setBinarySizesKb((curr) => ({ ...curr, [kind]: blob.size / 1024 }));
       } catch (err) {
         setBinaryError(
           err instanceof Error ? err.message : `Unable to render ${kind.toUpperCase()} preview.`
@@ -96,33 +105,103 @@ export function LiveStudioView({
 
   useEffect(() => {
     if (compareMode) return;
-    if (previewMode === 'pdf' || previewMode === 'png') {
+    if (
+      previewMode === 'pdf' ||
+      previewMode === 'native-pdf' ||
+      previewMode === 'png' ||
+      previewMode === 'canvas-png'
+    ) {
       void fetchBinaryPreview(previewMode);
     }
   }, [previewMode, compareMode, fetchBinaryPreview]);
 
-  const renderedOutput = useMemo(() => {
-    if (previewMode === 'email') return renderEmailHtml(report);
-    if (previewMode === 'plain-text') return renderPlainTextEmail(report);
-    if (previewMode === 'document') return renderPrintDocumentHtml(report);
-    if (previewMode === 'json') return JSON.stringify(renderReportDesignJson(report, 'web'), null, 2);
-    if (previewMode === 'web') return renderWebHtml(report);
-    return '';
+  useEffect(() => {
+    let cancelled = false;
+    async function renderActivePreview() {
+      if (previewMode === 'json') {
+        const json = renderReportDesignJson(report, 'web');
+        if (!cancelled) setRenderedOutput(JSON.stringify(json, null, 2));
+        return;
+      }
+      if (previewMode === 'email') {
+        const out = await renderEmailHtml(report);
+        if (!cancelled) setRenderedOutput(out);
+        return;
+      }
+      if (previewMode === 'plain-text') {
+        const out = await renderPlainTextEmail(report);
+        if (!cancelled) setRenderedOutput(out);
+        return;
+      }
+      if (previewMode === 'document') {
+        const out = await renderPrintDocumentHtml(report);
+        if (!cancelled) setRenderedOutput(out);
+        return;
+      }
+      if (previewMode === 'canvas') {
+        const out = await renderCanvasHtml(report);
+        if (!cancelled) setRenderedOutput(out);
+        return;
+      }
+      if (previewMode === 'web') {
+        const out = await renderWebHtml(report);
+        if (!cancelled) setRenderedOutput(out);
+        return;
+      }
+      if (!cancelled) setRenderedOutput('');
+    }
+    void renderActivePreview().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [report, previewMode]);
 
-  const qualityScore = useMemo(() => scoreReportExports(report), [report]);
+  useEffect(() => {
+    let cancelled = false;
+    void scoreReportExports(report)
+      .then((score) => {
+        if (!cancelled) setQualityScore(score);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [report]);
 
-  const themeComparisons = useMemo(() => {
-    if (!compareMode) return [];
-    return THEME_LIST.map((t) => ({
-      theme: t,
-      html: renderWebHtml({
-        ...report,
-        theme: t.id,
-        branding: { ...report.branding, accentColor: t.colors.accent },
-      }),
-    }));
+  useEffect(() => {
+    if (!compareMode) {
+      setThemeComparisons([]);
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      THEME_LIST.map(async (t) => ({
+        theme: t,
+        html: await renderWebHtml({
+          ...report,
+          theme: t.id,
+          branding: { ...report.branding, accentColor: t.colors.accent },
+        }),
+      }))
+    )
+      .then((results) => {
+        if (!cancelled) setThemeComparisons(results);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [report, compareMode]);
+
+  const isPdfPreview = previewMode === 'pdf' || previewMode === 'native-pdf';
+  const isPngPreview = previewMode === 'png' || previewMode === 'canvas-png';
+  const activeBinaryKind: BinaryPreviewKind | null = isPdfPreview
+    ? previewMode
+    : isPngPreview
+      ? previewMode
+      : null;
+  const activeBinaryUrl = activeBinaryKind ? binaryUrls[activeBinaryKind] : undefined;
+  const activeBinarySizeKb = activeBinaryKind ? binarySizesKb[activeBinaryKind] : undefined;
 
   return (
     <div className="space-y-5">
@@ -133,18 +212,20 @@ export function LiveStudioView({
             <h1 className="font-display text-2xl lg:text-3xl font-semibold text-[#0B1120]">
               Five-Format Live Report Studio
             </h1>
-            <button
-              type="button"
-              onClick={onGoToExport}
-              className="font-mono-num text-xs font-semibold text-emerald-700 hover:underline cursor-pointer"
-              title="Inspect full Export Quality Scorecard"
-            >
-              Quality {qualityScore.overallScore}/100 ({qualityScore.grade})
-            </button>
+            {qualityScore ? (
+              <button
+                type="button"
+                onClick={onGoToExport}
+                className="font-mono-num text-xs font-semibold text-emerald-700 hover:underline cursor-pointer"
+                title="Inspect full Export Quality Scorecard"
+              >
+                Quality {qualityScore.overallScore}/100 ({qualityScore.grade})
+              </button>
+            ) : null}
           </div>
           <p className="text-xs text-slate-600 mt-1">
-            Inspect Email HTML, Plain-Text, Responsive Web, Playwright A4 PDF, and 2x Retina PNG
-            from one shared model.
+            Inspect Email HTML, Plain-Text, Responsive Web, Native &amp; Playwright A4 PDF, and
+            &lt;Canvas&gt; / Playwright PNG from one shared model.
           </p>
         </div>
 
@@ -222,7 +303,10 @@ export function LiveStudioView({
                   { id: 'email', label: '2. Email HTML' },
                   { id: 'plain-text', label: '3. Plain-Text' },
                   { id: 'pdf', label: '4. A4 PDF (Playwright)' },
+                  { id: 'native-pdf', label: 'Native PDF (@hyper)' },
                   { id: 'png', label: '5. 2x PNG (Playwright)' },
+                  { id: 'canvas-png', label: 'Canvas PNG (@hyper)' },
+                  { id: 'canvas', label: '<Canvas> HTML' },
                   { id: 'document', label: 'Print Markup' },
                   { id: 'json', label: 'Design JSON' },
                 ] as { id: PreviewMode; label: string }[]
@@ -278,29 +362,31 @@ export function LiveStudioView({
               <pre className="w-full max-h-[76vh] overflow-auto rounded-lg bg-[#0B1120] text-[#F8F6F0] p-6 font-mono-num text-xs leading-relaxed whitespace-pre-wrap">
                 {renderedOutput}
               </pre>
-            ) : previewMode === 'pdf' ? (
+            ) : isPdfPreview && activeBinaryKind ? (
               <div className="w-full max-w-[1040px] space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-lg bg-white border border-slate-200 text-xs">
                   <span className="font-semibold text-[#0B1120]">
-                    Playwright Chromium A4 PDF Preview
-                    {binarySizeKb !== null ? ` · ${binarySizeKb.toFixed(0)} KB` : ''}
+                    {previewMode === 'native-pdf'
+                      ? 'Native @hyper-elements/react/pdf (renderPdf) A4 Document Preview'
+                      : 'Playwright Chromium A4 PDF Preview (Full Web Fonts)'}
+                    {activeBinarySizeKb !== undefined ? ` · ${activeBinarySizeKb.toFixed(0)} KB` : ''}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => fetchBinaryPreview('pdf')}
-                      disabled={binaryLoading === 'pdf'}
+                      onClick={() => fetchBinaryPreview(activeBinaryKind)}
+                      disabled={binaryLoading === activeBinaryKind}
                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
                     >
                       <RefreshCw
-                        className={`h-3 w-3 ${binaryLoading === 'pdf' ? 'animate-spin' : ''}`}
+                        className={`h-3 w-3 ${binaryLoading === activeBinaryKind ? 'animate-spin' : ''}`}
                       />
                       <span>Re-render PDF</span>
                     </button>
-                    {pdfBlobUrl ? (
+                    {activeBinaryUrl ? (
                       <a
-                        href={pdfBlobUrl}
-                        download={`${report.branding.companyName}-preview.pdf`}
+                        href={activeBinaryUrl}
+                        download={`${report.branding.companyName}-${previewMode === 'native-pdf' ? 'native' : 'playwright'}.pdf`}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#0B1120] text-[#F8F6F0] font-semibold"
                       >
                         <Download className="h-3 w-3 text-[#D4FF33]" />
@@ -310,49 +396,55 @@ export function LiveStudioView({
                   </div>
                 </div>
 
-                {binaryLoading === 'pdf' ? (
+                {binaryLoading === activeBinaryKind ? (
                   <div className="h-[640px] bg-white rounded-lg border border-slate-300 flex flex-col items-center justify-center gap-2 text-xs text-slate-600">
                     <Loader2 className="h-6 w-6 animate-spin text-[#0891B2]" />
-                    <span>Rendering A4 paginated PDF in headless Chromium...</span>
+                    <span>
+                      {previewMode === 'native-pdf'
+                        ? 'Compiling native @hyper-elements/react/pdf Document...'
+                        : 'Rendering A4 paginated PDF in headless Chromium...'}
+                    </span>
                   </div>
                 ) : binaryError ? (
                   <div className="p-6 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-900">
                     {binaryError}
                   </div>
-                ) : pdfBlobUrl ? (
+                ) : activeBinaryUrl ? (
                   <div className="bg-white rounded-lg overflow-hidden shadow-md border border-slate-300">
                     <iframe
-                      title="NEXORA Playwright A4 PDF preview"
-                      src={pdfBlobUrl}
+                      title={`NEXORA ${previewMode} preview`}
+                      src={activeBinaryUrl}
                       className="w-full border-0"
                       style={{ height: '78vh', minHeight: '640px' }}
                     />
                   </div>
                 ) : null}
               </div>
-            ) : previewMode === 'png' ? (
+            ) : isPngPreview && activeBinaryKind ? (
               <div className="w-full max-w-[1040px] space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-lg bg-white border border-slate-200 text-xs">
                   <span className="font-semibold text-[#0B1120]">
-                    Playwright 2x Retina PNG Snapshot ({viewport === 'mobile' ? '430px' : '1080px'})
-                    {binarySizeKb !== null ? ` · ${binarySizeKb.toFixed(0)} KB` : ''}
+                    {previewMode === 'canvas-png'
+                      ? 'Native @hyper-elements/react/image <Canvas> Summary Card (2400×1600 Retina PNG)'
+                      : `Playwright 2x Retina PNG Full-Page Snapshot (${viewport === 'mobile' ? '430px' : '1080px'})`}
+                    {activeBinarySizeKb !== undefined ? ` · ${activeBinarySizeKb.toFixed(0)} KB` : ''}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => fetchBinaryPreview('png')}
-                      disabled={binaryLoading === 'png'}
+                      onClick={() => fetchBinaryPreview(activeBinaryKind)}
+                      disabled={binaryLoading === activeBinaryKind}
                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer"
                     >
                       <RefreshCw
-                        className={`h-3 w-3 ${binaryLoading === 'png' ? 'animate-spin' : ''}`}
+                        className={`h-3 w-3 ${binaryLoading === activeBinaryKind ? 'animate-spin' : ''}`}
                       />
                       <span>Re-capture PNG</span>
                     </button>
-                    {pngBlobUrl ? (
+                    {activeBinaryUrl ? (
                       <a
-                        href={pngBlobUrl}
-                        download={`${report.branding.companyName}-preview.png`}
+                        href={activeBinaryUrl}
+                        download={`${report.branding.companyName}-${previewMode === 'canvas-png' ? 'canvas-card' : 'snapshot'}.png`}
                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#0B1120] text-[#F8F6F0] font-semibold"
                       >
                         <Download className="h-3 w-3 text-[#D4FF33]" />
@@ -362,20 +454,24 @@ export function LiveStudioView({
                   </div>
                 </div>
 
-                {binaryLoading === 'png' ? (
+                {binaryLoading === activeBinaryKind ? (
                   <div className="h-[640px] bg-white rounded-lg border border-slate-300 flex flex-col items-center justify-center gap-2 text-xs text-slate-600">
                     <Loader2 className="h-6 w-6 animate-spin text-[#0891B2]" />
-                    <span>Capturing 2x high-resolution PNG via Playwright Chromium...</span>
+                    <span>
+                      {previewMode === 'canvas-png'
+                        ? 'Rasterizing <Canvas 1200×800> at 2x via @hyper-elements/react/image...'
+                        : 'Capturing 2x high-resolution PNG via Playwright Chromium...'}
+                    </span>
                   </div>
                 ) : binaryError ? (
                   <div className="p-6 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-900">
                     {binaryError}
                   </div>
-                ) : pngBlobUrl ? (
+                ) : activeBinaryUrl ? (
                   <div className="max-h-[78vh] overflow-auto bg-white rounded-lg shadow-md border border-slate-300 p-4 flex justify-center">
                     <img
-                      src={pngBlobUrl}
-                      alt="Playwright high-resolution PNG report preview"
+                      src={activeBinaryUrl}
+                      alt={`${previewMode} report PNG preview`}
                       className="max-w-full h-auto shadow-xs rounded"
                     />
                   </div>
@@ -385,15 +481,15 @@ export function LiveStudioView({
               <div
                 className="transition-all duration-200 bg-white rounded-lg overflow-hidden shadow-md border border-slate-300"
                 style={{
-                  width: viewport === 'mobile' ? '390px' : '100%',
-                  maxWidth: '1040px',
+                  width: previewMode === 'canvas' ? '100%' : viewport === 'mobile' ? '390px' : '100%',
+                  maxWidth: previewMode === 'canvas' ? '1200px' : '1040px',
                 }}
               >
                 <iframe
                   title={`NEXORA ${previewMode} preview`}
                   srcDoc={renderedOutput}
                   className="w-full border-0"
-                  style={{ height: '78vh', minHeight: '640px' }}
+                  style={{ height: previewMode === 'canvas' ? '820px' : '78vh', minHeight: '640px' }}
                   sandbox="allow-scripts"
                 />
               </div>

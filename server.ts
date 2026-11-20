@@ -15,20 +15,41 @@ import {
   renderReportDesignJson,
   renderWebHtml,
 } from './src/elements/renderers.ts';
+import {
+  renderNativeCanvasPng,
+  renderNativeDocumentPdf,
+} from './src/elements/serverRenderers.ts';
 
 const PORT = Number(process.env.PORT) || 3000;
 const isProd = process.env.NODE_ENV === 'production' || process.argv.includes('--prod');
 
 let browserPromise: Promise<Browser> | null = null;
 
+function resolveChromiumExecutable(): string | undefined {
+  if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH && fs.existsSync(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)) {
+    return process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+  }
+  const defaultExec = chromium.executablePath();
+  if (defaultExec && fs.existsSync(defaultExec)) {
+    return undefined;
+  }
+  const containerFallback = '/ms-playwright/chrome-headless-shell-linux64/chrome-headless-shell';
+  if (fs.existsSync(containerFallback)) {
+    return containerFallback;
+  }
+  return undefined;
+}
+
 function launchChromium(): Promise<Browser> {
   const launchArgs =
     process.platform === 'linux'
       ? ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       : [];
+  const executablePath = resolveChromiumExecutable();
   return chromium.launch({
     headless: true,
     args: launchArgs,
+    ...(executablePath ? { executablePath } : {}),
   });
 }
 
@@ -50,7 +71,7 @@ async function getBrowser(): Promise<Browser> {
 }
 
 export async function generatePdfBuffer(report: ReportInputData): Promise<Buffer> {
-  const html = renderPrintDocumentHtml(report);
+  const html = await renderPrintDocumentHtml(report);
   const theme = resolveBrandTheme(report);
   const browser = await getBrowser();
   const context = await browser.newContext({
@@ -99,7 +120,7 @@ export async function generatePngBuffer(
   report: ReportInputData,
   viewportWidth = 1080
 ): Promise<Buffer> {
-  const html = renderWebHtml(report);
+  const html = await renderWebHtml(report);
   const browser = await getBrowser();
   const safeWidth = Math.min(1440, Math.max(390, Number(viewportWidth) || 1080));
 
@@ -155,34 +176,34 @@ export function createApp() {
   app.use(express.json({ limit: '5mb' }));
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, engine: '@unlayer/react-elements', renderer: 'playwright-chromium' });
+    res.json({ ok: true, engine: '@hyper-elements/react', renderer: 'playwright-chromium' });
   });
 
-  app.post('/api/export/email-html', (req, res) => {
+  app.post('/api/export/email-html', async (req, res) => {
     const report = parseAndValidateReport(req, res);
     if (!report) return;
     const filename = sanitizeFilename(req.body?.filename || `${report.branding.companyName}-${report.reportingPeriod}-email`);
-    const html = renderEmailHtml(report);
+    const html = await renderEmailHtml(report);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}.html"`);
     res.send(html);
   });
 
-  app.post('/api/export/plain-text', (req, res) => {
+  app.post('/api/export/plain-text', async (req, res) => {
     const report = parseAndValidateReport(req, res);
     if (!report) return;
     const filename = sanitizeFilename(req.body?.filename || `${report.branding.companyName}-${report.reportingPeriod}-plain`);
-    const text = renderPlainTextEmail(report);
+    const text = await renderPlainTextEmail(report);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}.txt"`);
     res.send(text);
   });
 
-  app.post('/api/export/web-html', (req, res) => {
+  app.post('/api/export/web-html', async (req, res) => {
     const report = parseAndValidateReport(req, res);
     if (!report) return;
     const filename = sanitizeFilename(req.body?.filename || `${report.branding.companyName}-${report.reportingPeriod}-web`);
-    const html = renderWebHtml(report);
+    const html = await renderWebHtml(report);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}.html"`);
     res.send(html);
@@ -213,6 +234,21 @@ export function createApp() {
     }
   });
 
+  app.post('/api/export/native-pdf', async (req, res) => {
+    const report = parseAndValidateReport(req, res);
+    if (!report) return;
+    const filename = sanitizeFilename(req.body?.filename || `${report.branding.companyName}-${report.reportingPeriod}-native`);
+    try {
+      const { pdf } = await renderNativeDocumentPdf(report);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+      res.send(Buffer.from(pdf));
+    } catch (err) {
+      console.error('Native renderPdf error:', err);
+      res.status(500).json({ error: 'Failed to generate native @hyper-elements/react/pdf output.' });
+    }
+  });
+
   app.post('/api/export/png', async (req, res) => {
     const report = parseAndValidateReport(req, res);
     if (!report) return;
@@ -225,6 +261,21 @@ export function createApp() {
     } catch (err) {
       console.error('PNG generation error:', err);
       res.status(500).json({ error: 'Failed to capture PNG screenshot via Playwright Chromium.' });
+    }
+  });
+
+  app.post('/api/export/canvas-png', async (req, res) => {
+    const report = parseAndValidateReport(req, res);
+    if (!report) return;
+    const filename = sanitizeFilename(req.body?.filename || `${report.branding.companyName}-${report.reportingPeriod}-card`);
+    try {
+      const { image } = await renderNativeCanvasPng(report, { scale: 2, format: 'png' });
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.png"`);
+      res.send(Buffer.from(image));
+    } catch (err) {
+      console.error('Native renderImage error:', err);
+      res.status(500).json({ error: 'Failed to render Canvas image via @hyper-elements/react/image.' });
     }
   });
 

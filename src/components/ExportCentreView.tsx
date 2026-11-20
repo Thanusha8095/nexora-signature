@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Award,
@@ -15,7 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { getAudienceEdition } from '../core/audiences.ts';
-import { scoreReportExports } from '../core/exportQuality.ts';
+import { scoreReportExports, type ExportQualityScorecard } from '../core/exportQuality.ts';
 import { sanitizeFilename } from '../core/security.ts';
 import { resolveBrandTheme } from '../core/themes.ts';
 import type { ExportFormat, ReportInputData, ValidationResult } from '../core/types.ts';
@@ -58,13 +58,27 @@ export function ExportCentreView({
   const [busyFormat, setBusyFormat] = useState<ExportFormat | 'json' | null>(null);
   const [pngWidth, setPngWidth] = useState<number>(1080);
   const [pngPreviewUrl, setPngPreviewUrl] = useState<string | null>(null);
+  const [pngPreviewLabel, setPngPreviewLabel] = useState<string>('');
   const [showAllFindings, setShowAllFindings] = useState(false);
+
+  const [qualityScore, setQualityScore] = useState<ExportQualityScorecard | null>(null);
 
   const audience = getAudienceEdition(report.audienceEdition);
   const theme = resolveBrandTheme(report);
-  const qualityScore = useMemo(() => scoreReportExports(report), [report]);
   const defaultBase = `${report.branding.companyName}-${report.reportingPeriod}-${audience.shortLabel}`;
   const safeBase = sanitizeFilename(customFilename || defaultBase, 'nexora-executive-report');
+
+  useEffect(() => {
+    let cancelled = false;
+    void scoreReportExports(report)
+      .then((score) => {
+        if (!cancelled) setQualityScore(score);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [report]);
 
   const ensureValid = (): boolean => {
     if (!validation.valid) {
@@ -85,21 +99,21 @@ export function ExportCentreView({
     setBusyFormat(format);
     try {
       if (format === 'email-html') {
-        const html = renderEmailHtml(report);
+        const html = await renderEmailHtml(report);
         triggerBlobDownload(
           new Blob([html], { type: 'text/html;charset=utf-8' }),
           `${safeBase}-email.html`
         );
         onNotify('success', 'Email HTML exported', `Downloaded ${safeBase}-email.html`);
       } else if (format === 'plain-text') {
-        const text = renderPlainTextEmail(report);
+        const text = await renderPlainTextEmail(report);
         triggerBlobDownload(
           new Blob([text], { type: 'text/plain;charset=utf-8' }),
           `${safeBase}-plain.txt`
         );
         onNotify('success', 'Plain-Text Email exported', `Downloaded ${safeBase}-plain.txt`);
       } else if (format === 'web-html') {
-        const html = renderWebHtml(report);
+        const html = await renderWebHtml(report);
         triggerBlobDownload(
           new Blob([html], { type: 'text/html;charset=utf-8' }),
           `${safeBase}-web.html`
@@ -109,12 +123,12 @@ export function ExportCentreView({
         const json = renderReportDesignJson(report, 'web');
         triggerBlobDownload(
           new Blob([JSON.stringify(json, null, 2)], { type: 'application/json;charset=utf-8' }),
-          `${safeBase}-unlayer-design.json`
+          `${safeBase}-hyper-design.json`
         );
         onNotify(
           'success',
-          'Unlayer DesignJSON exported',
-          `Downloaded ${safeBase}-unlayer-design.json`
+          'Builder DesignJSON exported',
+          `Downloaded ${safeBase}-hyper-design.json`
         );
       }
     } catch (err) {
@@ -132,9 +146,9 @@ export function ExportCentreView({
     if (!ensureValid()) return;
     try {
       let content = '';
-      if (format === 'email-html') content = renderEmailHtml(report);
-      else if (format === 'plain-text') content = renderPlainTextEmail(report);
-      else if (format === 'web-html') content = renderWebHtml(report);
+      if (format === 'email-html') content = await renderEmailHtml(report);
+      else if (format === 'plain-text') content = await renderPlainTextEmail(report);
+      else if (format === 'web-html') content = await renderWebHtml(report);
       else content = JSON.stringify(renderReportDesignJson(report, 'web'), null, 2);
 
       await navigator.clipboard.writeText(content);
@@ -144,25 +158,42 @@ export function ExportCentreView({
     }
   };
 
-  const handleServerExport = async (format: 'pdf' | 'png') => {
+  const handleServerExport = async (
+    format: 'pdf' | 'native-pdf' | 'png' | 'canvas-png'
+  ) => {
     if (!ensureValid()) return;
     setBusyFormat(format);
-    onNotify(
-      'info',
-      format === 'pdf'
-        ? 'Rendering A4 PDF via Playwright...'
-        : 'Capturing 2x Retina PNG via Playwright...',
-      'This typically completes in 1–3 seconds.'
-    );
+    const infoMessages: Record<typeof format, string> = {
+      pdf: 'Rendering A4 PDF via Playwright...',
+      'native-pdf': 'Rendering native @hyper-elements/react/pdf...',
+      png: 'Capturing 2x Retina PNG via Playwright...',
+      'canvas-png': 'Rendering native <Canvas> 2400×1600 PNG...',
+    };
+    onNotify('info', infoMessages[format], 'This typically completes in 1–3 seconds.');
 
     try {
-      const endpoint = format === 'pdf' ? '/api/export/pdf' : '/api/export/png';
-      const resp = await fetch(endpoint, {
+      const endpointMap: Record<typeof format, string> = {
+        pdf: '/api/export/pdf',
+        'native-pdf': '/api/export/native-pdf',
+        png: '/api/export/png',
+        'canvas-png': '/api/export/canvas-png',
+      };
+      const suffixMap: Record<typeof format, string> = {
+        pdf: 'report',
+        'native-pdf': 'native-document',
+        png: 'snapshot',
+        'canvas-png': 'canvas-card',
+      };
+      const isPdf = format === 'pdf' || format === 'native-pdf';
+      const ext = isPdf ? 'pdf' : 'png';
+      const fileBase = `${safeBase}-${suffixMap[format]}`;
+
+      const resp = await fetch(endpointMap[format], {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           report,
-          filename: `${safeBase}-${format === 'pdf' ? 'report' : 'snapshot'}`,
+          filename: fileBase,
           viewportWidth: pngWidth,
         }),
       });
@@ -173,13 +204,17 @@ export function ExportCentreView({
       }
 
       const blob = await resp.blob();
-      const ext = format === 'pdf' ? 'pdf' : 'png';
-      const fileOut = `${safeBase}-${format === 'pdf' ? 'report' : 'snapshot'}.${ext}`;
+      const fileOut = `${fileBase}.${ext}`;
       triggerBlobDownload(blob, fileOut);
 
-      if (format === 'png') {
+      if (!isPdf) {
         if (pngPreviewUrl) URL.revokeObjectURL(pngPreviewUrl);
         setPngPreviewUrl(URL.createObjectURL(blob));
+        setPngPreviewLabel(
+          format === 'canvas-png'
+            ? 'Native @hyper-elements/react/image <Canvas> Card (2400×1600 PNG)'
+            : `Playwright Full-Report 2x PNG (${pngWidth}px)`
+        );
       }
 
       onNotify(
@@ -191,7 +226,7 @@ export function ExportCentreView({
       onNotify(
         'error',
         `${format.toUpperCase()} generation failed`,
-        err instanceof Error ? err.message : 'Unable to reach Playwright export server.'
+        err instanceof Error ? err.message : 'Unable to reach export server.'
       );
     } finally {
       setBusyFormat(null);
@@ -199,7 +234,7 @@ export function ExportCentreView({
   };
 
   const scoreAccent =
-    qualityScore.overallScore >= 90
+    !qualityScore || qualityScore.overallScore >= 90
       ? 'text-emerald-700'
       : qualityScore.overallScore >= 75
         ? 'text-[#0891B2]'
@@ -242,6 +277,7 @@ export function ExportCentreView({
       ) : null}
 
       {/* Genuine Export Quality Scorecard */}
+      {qualityScore ? (
       <section
         aria-label="Genuine Export Quality Scorecard"
         className="rounded-xl border border-slate-200 bg-white overflow-hidden"
@@ -262,7 +298,7 @@ export function ExportCentreView({
               </div>
               <p className="text-xs text-slate-600 mt-0.5">
                 Computed live by auditing rendered Email HTML, Plain-Text, Web HTML, A4 Print DOM,
-                Unlayer DesignJSON, and Data Quality Guardian checks.
+                Builder DesignJSON, and Data Quality Guardian checks.
               </p>
             </div>
           </div>
@@ -320,7 +356,7 @@ export function ExportCentreView({
             <span>
               Contrast: {qualityScore.telemetry.contrastRatioPrimary.toFixed(1)}:1 (WCAG AA &ge; 4.5)
             </span>
-            <span>Unlayer Rows: {qualityScore.telemetry.designJsonRows}</span>
+            <span>DesignJSON Rows: {qualityScore.telemetry.designJsonRows}</span>
             <span>
               Redaction:{' '}
               {qualityScore.telemetry.redactionVerified ? 'Verified' : 'Attention needed'}
@@ -380,6 +416,11 @@ export function ExportCentreView({
           </div>
         ) : null}
       </section>
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-white p-6 text-xs text-slate-500">
+          Computing Export Quality Scorecard...
+        </div>
+      )}
 
       {/* Pre-Export Data Quality Guardian Gate */}
       <DataQualityPanel
@@ -420,8 +461,8 @@ export function ExportCentreView({
             </div>
             <h2 className="text-base font-semibold text-[#0B1120] mt-3">1. Email HTML</h2>
             <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-              Rendered via <code className="font-mono-num">renderToHtml</code> with XHTML
-              table-based layouts, inbox preview text, and email-safe table sparklines.
+              Rendered via <code className="font-mono-num">render()</code> with XHTML
+              table-based layouts, inbox preview text, and email-safe sparklines.
             </p>
           </div>
           <div className="flex items-center gap-2 mt-5">
@@ -450,7 +491,7 @@ export function ExportCentreView({
           <div>
             <div className="flex items-center justify-between">
               <FileText className="h-5 w-5 text-[#0891B2]" />
-              <span className="font-mono-num text-[11px] text-slate-500">renderToPlainText</span>
+              <span className="font-mono-num text-[11px] text-slate-500">render().text</span>
             </div>
             <h2 className="text-base font-semibold text-[#0B1120] mt-3">2. Plain-Text Email</h2>
             <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
@@ -488,8 +529,8 @@ export function ExportCentreView({
             </div>
             <h2 className="text-base font-semibold text-[#0B1120] mt-3">3. Responsive Web HTML</h2>
             <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-              Standalone HTML5 report via <code className="font-mono-num">renderToHtml</code> with
-              responsive grid layout, vector SVG charts, and interactive hover tooltips.
+              Standalone HTML5 report via <code className="font-mono-num">render()</code> with
+              responsive grid layout and native vector <code className="font-mono-num">&lt;Svg&gt;</code> charts.
             </p>
           </div>
           <div className="flex items-center gap-2 mt-5">
@@ -513,56 +554,78 @@ export function ExportCentreView({
           </div>
         </div>
 
-        {/* 4. A4 PDF (Playwright) */}
+        {/* 4. A4 PDF (Native Hyper Elements + Playwright Fallback/Web Fonts) */}
         <div className="rounded-xl border border-slate-200 bg-white p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <Printer className="h-5 w-5 text-[#0891B2]" />
               <span className="font-mono-num text-[11px] text-slate-500">
-                &lt;Document&gt; · Playwright
+                &lt;Document&gt; · Dual Engine
               </span>
             </div>
             <h2 className="text-base font-semibold text-[#0B1120] mt-3">4. Executive A4 PDF</h2>
             <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-              Print-ready Unlayer <code className="font-mono-num">&lt;Document&gt;</code> with{' '}
-              <code className="font-mono-num">&lt;PageBreak /&gt;</code> boundaries rendered via
-              Playwright Chromium with running page numbers.
+              Export print-ready Hyper Elements <code className="font-mono-num">&lt;Document&gt;</code>{' '}
+              via native <code className="font-mono-num">renderPdf()</code> (zero browser needed) or
+              Playwright Chromium for full custom web fonts.
             </p>
           </div>
-          <button
-            type="button"
-            disabled={busyFormat !== null}
-            onClick={() => handleServerExport('pdf')}
-            className="mt-5 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#0891B2] text-white text-xs font-semibold hover:bg-cyan-700 disabled:opacity-50 cursor-pointer"
-          >
-            {busyFormat === 'pdf' ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>Generating A4 PDF...</span>
-              </>
-            ) : (
-              <>
-                <Download className="h-3.5 w-3.5" />
-                <span>Generate &amp; Download PDF</span>
-              </>
-            )}
-          </button>
+          <div className="mt-5 space-y-2">
+            <button
+              type="button"
+              disabled={busyFormat !== null}
+              onClick={() => handleServerExport('native-pdf')}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#0B1120] text-[#F8F6F0] text-xs font-semibold hover:bg-[#17223B] disabled:opacity-50 cursor-pointer"
+            >
+              {busyFormat === 'native-pdf' ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#D4FF33]" />
+                  <span>Rendering Native PDF...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="h-3.5 w-3.5 text-[#D4FF33]" />
+                  <span>Native Hyper PDF (renderPdf)</span>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              disabled={busyFormat !== null}
+              onClick={() => handleServerExport('pdf')}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white text-[#0B1120] text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+            >
+              {busyFormat === 'pdf' ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#0891B2]" />
+                  <span>Generating Playwright PDF...</span>
+                </>
+              ) : (
+                <>
+                  <Printer className="h-3.5 w-3.5 text-[#0891B2]" />
+                  <span>Playwright A4 PDF (Web Fonts)</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
-        {/* 5. High-Res PNG (Playwright) */}
+        {/* 5. High-Res PNG (Native <Canvas> Card + Playwright Full-Page) */}
         <div className="rounded-xl border border-slate-200 bg-white p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <ImageIcon className="h-5 w-5 text-[#0891B2]" />
-              <span className="font-mono-num text-[11px] text-slate-500">Playwright 2x PNG</span>
+              <span className="font-mono-num text-[11px] text-slate-500">
+                &lt;Canvas&gt; + 2x PNG
+              </span>
             </div>
             <h2 className="text-base font-semibold text-[#0B1120] mt-3">5. High-Resolution PNG</h2>
             <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-              Full-page 2x Retina Chromium screenshot ready for investor decks, Notion embeds, and
-              board packets.
+              Generate a native <code className="font-mono-num">&lt;Canvas 1200×800&gt;</code> executive
+              summary card (2400×1600) or full-report 2x Playwright screenshot.
             </p>
             <div className="mt-3 flex items-center gap-2 text-xs">
-              <span className="text-slate-500">Capture width:</span>
+              <span className="text-slate-500">Full-page width:</span>
               <button
                 type="button"
                 onClick={() => setPngWidth(1080)}
@@ -587,38 +650,58 @@ export function ExportCentreView({
               </button>
             </div>
           </div>
-          <button
-            type="button"
-            disabled={busyFormat !== null}
-            onClick={() => handleServerExport('png')}
-            className="mt-5 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#0891B2] text-white text-xs font-semibold hover:bg-cyan-700 disabled:opacity-50 cursor-pointer"
-          >
-            {busyFormat === 'png' ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>Capturing PNG...</span>
-              </>
-            ) : (
-              <>
-                <Download className="h-3.5 w-3.5" />
-                <span>Capture &amp; Download PNG</span>
-              </>
-            )}
-          </button>
+          <div className="mt-5 space-y-2">
+            <button
+              type="button"
+              disabled={busyFormat !== null}
+              onClick={() => handleServerExport('canvas-png')}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#0B1120] text-[#F8F6F0] text-xs font-semibold hover:bg-[#17223B] disabled:opacity-50 cursor-pointer"
+            >
+              {busyFormat === 'canvas-png' ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#D4FF33]" />
+                  <span>Rendering Canvas PNG...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="h-3.5 w-3.5 text-[#D4FF33]" />
+                  <span>Native &lt;Canvas&gt; Card PNG (2x)</span>
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              disabled={busyFormat !== null}
+              onClick={() => handleServerExport('png')}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white text-[#0B1120] text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+            >
+              {busyFormat === 'png' ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#0891B2]" />
+                  <span>Capturing Full-Page PNG...</span>
+                </>
+              ) : (
+                <>
+                  <ImageIcon className="h-3.5 w-3.5 text-[#0891B2]" />
+                  <span>Playwright Full-Report 2x PNG</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
-        {/* Bonus: Unlayer DesignJSON */}
+        {/* Bonus: Hyper Builder DesignJSON */}
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <Code2 className="h-5 w-5 text-slate-700" />
-              <span className="font-mono-num text-[11px] text-slate-500">renderToJson</span>
+              <span className="font-mono-num text-[11px] text-slate-500">toDesign()</span>
             </div>
-            <h2 className="text-base font-semibold text-[#0B1120] mt-3">Unlayer DesignJSON</h2>
+            <h2 className="text-base font-semibold text-[#0B1120] mt-3">Builder DesignJSON</h2>
             <p className="text-xs text-slate-600 mt-1.5 leading-relaxed">
-              Canonical Unlayer <code className="font-mono-num">DesignJSON</code> schema generated
-              by <code className="font-mono-num">renderToJson</code> for round-tripping into Unlayer
-              Builder.
+              Canonical <code className="font-mono-num">DesignJSON</code> schema generated
+              by <code className="font-mono-num">@hyper-elements/react/builder</code>{' '}
+              <code className="font-mono-num">toDesign()</code>.
             </p>
           </div>
           <div className="flex items-center gap-2 mt-5">
@@ -648,7 +731,7 @@ export function ExportCentreView({
         <div className="rounded-xl border border-slate-200 bg-white p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-[#0B1120]">
-              Captured High-Resolution PNG Preview
+              {pngPreviewLabel || 'Captured High-Resolution PNG Preview'}
             </h3>
             <button
               type="button"

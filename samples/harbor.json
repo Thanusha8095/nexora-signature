@@ -1,0 +1,47 @@
+{
+  "company": {
+    "name": "Harbor & Pine Coffee",
+    "website": "https://example.com/harbor-pine"
+  },
+  "report": {
+    "title": "Quarterly Review",
+    "period": "Q3 2026",
+    "summary": "Three new cafes opened this quarter and wholesale orders grew faster than retail. Green coffee prices pushed expenses up, so we raised menu prices by 4% in September."
+  },
+  "currency": "EUR",
+  "metrics": {
+    "revenue": 212400,
+    "expenses": 163900,
+    "customers": 5120,
+    "growth": 9.2
+  },
+  "chart": {
+    "title": "Revenue by channel",
+    "data": [
+      {
+        "label": "Cafes",
+        "value": 118000
+      },
+      {
+        "label": "Wholesale",
+        "value": 64400
+      },
+      {
+        "label": "Online",
+        "value": 30000
+      }
+    ]
+  },
+  "insights": [
+    "Wholesale is now 30% of revenue, up from 22% last quarter.",
+    "Average order value rose after the September price change."
+  ],
+  "branding": {
+    "primaryColor": "#0F766E",
+    "secondaryColor": "#1F2937"
+  },
+  "footer": {
+    "text": "Harbor & Pine Coffee · Internal use only"
+  },
+  "theme": "minimal"
+}

@@ -176,7 +176,7 @@ export function Sidebar({
       {/* Engine Footer */}
       <div className="px-5 py-3.5 border-t border-[#1E293B] text-[11px] text-slate-400">
         <div className="font-medium text-slate-300">NEXORA Signature</div>
-        <div>Powered by @unlayer/react-elements</div>
+        <div>Powered by @hyper-elements/react</div>
       </div>
     </div>
   );

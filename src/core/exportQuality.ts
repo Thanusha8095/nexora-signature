@@ -9,6 +9,7 @@ import {
   renderPrintDocumentHtml,
   renderReportDesignJson,
   renderWebHtml,
+  validateReportElements,
 } from '../elements/renderers.ts';
 
 export type ExportQualityGrade =
@@ -64,21 +65,29 @@ function deriveGrade(score: number, exportReady: boolean): ExportQualityGrade {
   return 'Needs Attention';
 }
 
-export function scoreReportExports(report: ReportInputData): ExportQualityScorecard {
+export async function scoreReportExports(
+  report: ReportInputData
+): Promise<ExportQualityScorecard> {
   const validation = validateReportData(report);
   const audience = getAudienceEdition(report.audienceEdition);
   const theme = resolveBrandTheme(report);
 
-  const emailHtml = renderEmailHtml(report);
-  const plainText = renderPlainTextEmail(report);
-  const webHtml = renderWebHtml(report);
-  const printHtml = renderPrintDocumentHtml(report);
+  const [emailHtml, plainText, webHtml, printHtml, webValidation, emailValidation] =
+    await Promise.all([
+      renderEmailHtml(report),
+      renderPlainTextEmail(report),
+      renderWebHtml(report),
+      renderPrintDocumentHtml(report),
+      validateReportElements(report, 'web'),
+      validateReportElements(report, 'email'),
+    ]);
   const designJson = renderReportDesignJson(report, 'web');
   const emailAudit = auditEmailHtml(emailHtml, report);
 
   const webKb = new TextEncoder().encode(webHtml).byteLength / 1024;
   const plainTextLines = plainText.split('\n').length;
   const designJsonRows = designJson.body?.rows?.length ?? 0;
+  const elementErrorsZero = webValidation.valid && emailValidation.valid;
 
   // 1. Data Integrity & Guardian Reconciliation (25 pts)
   const blockingErrorCount = Object.keys(validation.errors).length;
@@ -165,11 +174,11 @@ export function scoreReportExports(report: ReportInputData): ExportQualityScorec
     },
     {
       id: 'em-tables',
-      label: 'MSO Table Architecture & Table Sparklines',
+      label: 'MSO Table Architecture & Unicode Sparklines',
       status: emailMsoSparkPts === 4 ? 'pass' : 'warn',
       pointsEarned: emailMsoSparkPts,
       maxPoints: 4,
-      detail: `${emailAudit.tableCount} tables with nested HTML trajectory bars (no inline SVG in email).`,
+      detail: `${emailAudit.tableCount} tables with Unicode block sparklines (no inline SVG in email).`,
     },
     {
       id: 'em-a11y',
@@ -182,46 +191,47 @@ export function scoreReportExports(report: ReportInputData): ExportQualityScorec
   ];
 
   // 3. Responsive Web HTML & Visual Charts (20 pts)
-  const hasSvgCharts = /<svg\b/i.test(webHtml) && /<rect\b/i.test(webHtml);
-  const hasTooltipsAndMedia =
-    webHtml.includes('nexora-tooltip-bar') && /@media\s*\(max-width:/i.test(webHtml);
+  const hasSvgCharts =
+    /<svg\b/i.test(webHtml) && /<rect\b/i.test(webHtml) && /<line\b/i.test(webHtml);
+  const hasResponsiveAndRolling =
+    webHtml.includes('Rolling 3M Avg') && /@media/i.test(webHtml);
   const hasFontsAndTree =
-    webHtml.includes('fonts.googleapis.com') && designJsonRows >= 6;
+    webHtml.includes('fonts.googleapis.com') && designJsonRows >= 6 && elementErrorsZero;
   const webHasStoryAndTrend =
     webHtml.includes('Executive Story Arc') &&
     webHtml.includes(report.branding.companyName.replace(/[<>&"']/g, '').slice(0, 8));
 
   const webSvgPts = hasSvgCharts ? 7 : 0;
-  const webInteractivePts = hasTooltipsAndMedia ? 5 : 2;
-  const webUnlayerTreePts = hasFontsAndTree && webHasStoryAndTrend ? 8 : 4;
-  const webScore = webSvgPts + webInteractivePts + webUnlayerTreePts;
+  const webInteractivePts = hasResponsiveAndRolling ? 5 : 2;
+  const webHyperTreePts = hasFontsAndTree && webHasStoryAndTrend ? 8 : 4;
+  const webScore = webSvgPts + webInteractivePts + webHyperTreePts;
 
   const webFindings: ExportQualityFinding[] = [
     {
       id: 'web-svg',
-      label: 'Vector SVG Financial Trajectory Chart',
+      label: 'Native SVG Financial Trajectory Chart',
       status: hasSvgCharts ? 'pass' : 'fail',
       pointsEarned: webSvgPts,
       maxPoints: 7,
       detail: hasSvgCharts
-        ? 'Crisp responsive <svg> chart rendered with rolling 3M benchmark line and zero-crossing axis.'
+        ? 'Crisp native <Svg> vector chart rendered with Rolling 3M Avg dashed line, bars, and Net Profit curve.'
         : 'Vector SVG chart missing from Web HTML.',
     },
     {
       id: 'web-resp',
-      label: 'Responsive Breakpoints & Hover Inspection',
-      status: hasTooltipsAndMedia ? 'pass' : 'warn',
+      label: 'Responsive Breakpoints & Rolling Benchmark',
+      status: hasResponsiveAndRolling ? 'pass' : 'warn',
       pointsEarned: webInteractivePts,
       maxPoints: 5,
-      detail: `${webKb.toFixed(1)} KB standalone HTML5 bundle with responsive CSS grids and tooltip bar.`,
+      detail: `${webKb.toFixed(1)} KB standalone HTML5 bundle with @media responsive breakpoints and Rolling 3M benchmark.`,
     },
     {
       id: 'web-tree',
-      label: '@unlayer/react-elements Tree & DesignJSON',
+      label: '@hyper-elements/react Tree, validate() & DesignJSON',
       status: hasFontsAndTree && webHasStoryAndTrend ? 'pass' : 'warn',
-      pointsEarned: webUnlayerTreePts,
+      pointsEarned: webHyperTreePts,
       maxPoints: 8,
-      detail: `${designJsonRows} serialized Unlayer DesignJSON rows with resolved ${theme.name} web fonts.`,
+      detail: `${designJsonRows} serialized DesignJSON rows with resolved ${theme.name} web fonts and ${elementErrorsZero ? '0' : 'non-zero'} validate() errors.`,
     },
   ];
 
@@ -339,7 +349,7 @@ export function scoreReportExports(report: ReportInputData): ExportQualityScorec
       label: 'Web HTML & SVG Charts',
       score: webScore,
       maxScore: 20,
-      summary: `${webKb.toFixed(1)} KB · ${designJsonRows} Unlayer rows`,
+      summary: `${webKb.toFixed(1)} KB · ${designJsonRows} DesignJSON rows`,
       findings: webFindings,
     },
     {

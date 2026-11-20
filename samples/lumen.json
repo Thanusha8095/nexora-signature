@@ -1,0 +1,60 @@
+{
+  "company": {
+    "name": "Lumen Cloud Co.",
+    "website": "https://example.com/lumen"
+  },
+  "report": {
+    "title": "Monthly Business Performance",
+    "period": "October 2026",
+    "summary": "October closed with record revenue as the new usage-based plan converted well. Costs rose with two engineering hires and a one-off migration, but margin stayed above 60%. Churn held steady and enterprise pipeline grew for the third month in a row."
+  },
+  "currency": "USD",
+  "metrics": {
+    "revenue": 48250,
+    "expenses": 18200,
+    "customers": 1284,
+    "growth": 18.5
+  },
+  "chart": {
+    "title": "Revenue by month",
+    "data": [
+      {
+        "label": "May",
+        "value": 31200
+      },
+      {
+        "label": "Jun",
+        "value": 33800
+      },
+      {
+        "label": "Jul",
+        "value": 36100
+      },
+      {
+        "label": "Aug",
+        "value": 39400
+      },
+      {
+        "label": "Sep",
+        "value": 42600
+      },
+      {
+        "label": "Oct",
+        "value": 48250
+      }
+    ]
+  },
+  "insights": [
+    "Usage-based plan accounts for 41% of new sign-ups since launch.",
+    "Support tickets per customer fell as the new help center went live.",
+    "Two enterprise trials are scheduled to convert in November."
+  ],
+  "branding": {
+    "primaryColor": "#635BFF",
+    "secondaryColor": "#101B3D"
+  },
+  "footer": {
+    "text": "Lumen Cloud Co. · Confidential · Prepared by Finance"
+  },
+  "theme": "executive"
+}
