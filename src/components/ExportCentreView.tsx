@@ -237,7 +237,7 @@ export function ExportCentreView({
     !qualityScore || qualityScore.overallScore >= 90
       ? 'text-emerald-700'
       : qualityScore.overallScore >= 75
-        ? 'text-[#0891B2]'
+        ? 'text-[#0B6179]'
         : 'text-amber-700';
 
   return (
@@ -456,7 +456,7 @@ export function ExportCentreView({
         <div className="rounded-xl border border-slate-200 bg-white p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <Mail className="h-5 w-5 text-[#0891B2]" />
+              <Mail className="h-5 w-5 text-[#0B6179]" />
               <span className="font-mono-num text-[11px] text-slate-500">&lt;Email&gt;</span>
             </div>
             <h2 className="text-base font-semibold text-[#0B1120] mt-3">1. Email HTML</h2>
@@ -490,7 +490,7 @@ export function ExportCentreView({
         <div className="rounded-xl border border-slate-200 bg-white p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <FileText className="h-5 w-5 text-[#0891B2]" />
+              <FileText className="h-5 w-5 text-[#0B6179]" />
               <span className="font-mono-num text-[11px] text-slate-500">render().text</span>
             </div>
             <h2 className="text-base font-semibold text-[#0B1120] mt-3">2. Plain-Text Email</h2>
@@ -524,7 +524,7 @@ export function ExportCentreView({
         <div className="rounded-xl border border-slate-200 bg-white p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <Globe className="h-5 w-5 text-[#0891B2]" />
+              <Globe className="h-5 w-5 text-[#0B6179]" />
               <span className="font-mono-num text-[11px] text-slate-500">&lt;Page&gt;</span>
             </div>
             <h2 className="text-base font-semibold text-[#0B1120] mt-3">3. Responsive Web HTML</h2>
@@ -558,7 +558,7 @@ export function ExportCentreView({
         <div className="rounded-xl border border-slate-200 bg-white p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <Printer className="h-5 w-5 text-[#0891B2]" />
+              <Printer className="h-5 w-5 text-[#0B6179]" />
               <span className="font-mono-num text-[11px] text-slate-500">
                 &lt;Document&gt; · Dual Engine
               </span>
@@ -597,12 +597,12 @@ export function ExportCentreView({
             >
               {busyFormat === 'pdf' ? (
                 <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#0891B2]" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#0B6179]" />
                   <span>Generating Playwright PDF...</span>
                 </>
               ) : (
                 <>
-                  <Printer className="h-3.5 w-3.5 text-[#0891B2]" />
+                  <Printer className="h-3.5 w-3.5 text-[#0B6179]" />
                   <span>Playwright A4 PDF (Web Fonts)</span>
                 </>
               )}
@@ -614,7 +614,7 @@ export function ExportCentreView({
         <div className="rounded-xl border border-slate-200 bg-white p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <ImageIcon className="h-5 w-5 text-[#0891B2]" />
+              <ImageIcon className="h-5 w-5 text-[#0B6179]" />
               <span className="font-mono-num text-[11px] text-slate-500">
                 &lt;Canvas&gt; + 2x PNG
               </span>
@@ -677,12 +677,12 @@ export function ExportCentreView({
             >
               {busyFormat === 'png' ? (
                 <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#0891B2]" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#0B6179]" />
                   <span>Capturing Full-Page PNG...</span>
                 </>
               ) : (
                 <>
-                  <ImageIcon className="h-3.5 w-3.5 text-[#0891B2]" />
+                  <ImageIcon className="h-3.5 w-3.5 text-[#0B6179]" />
                   <span>Playwright Full-Report 2x PNG</span>
                 </>
               )}

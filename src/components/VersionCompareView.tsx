@@ -58,7 +58,7 @@ export function VersionCompareView({ report, recentReports }: VersionCompareView
   return (
     <div className="space-y-6">
       <div className="pb-5 border-b border-slate-200">
-        <div className="text-xs font-semibold uppercase tracking-wider text-[#0891B2]">
+        <div className="text-xs font-semibold uppercase tracking-wider text-[#0B6179]">
           Revision &amp; Baseline Audit
         </div>
         <h1 className="font-display text-2xl lg:text-3xl font-semibold text-[#0B1120] mt-1">
@@ -122,7 +122,7 @@ export function VersionCompareView({ report, recentReports }: VersionCompareView
       {/* Change Summary Strip */}
       <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2.5 text-xs">
-          <GitCompare className="h-4 w-4 text-[#0891B2]" />
+          <GitCompare className="h-4 w-4 text-[#0B6179]" />
           <span className="font-semibold text-[#0B1120]">
             {diff.totalSignificantChanges === 0
               ? 'Versions are identical across all financial figures, categories, and narrative.'
@@ -247,7 +247,7 @@ export function VersionCompareView({ report, recentReports }: VersionCompareView
                   <div className="font-semibold text-[#0B1120]">{m.field}</div>
                   <div className="text-slate-500 mt-1">
                     <span className="line-through">{m.before}</span> &rarr;{' '}
-                    <span className="font-semibold text-[#0891B2]">{m.after}</span>
+                    <span className="font-semibold text-[#0B6179]">{m.after}</span>
                   </div>
                 </div>
               ))}

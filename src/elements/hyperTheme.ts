@@ -1,5 +1,5 @@
 import { defineTheme } from '@hyper-elements/react';
-import { resolveBrandTheme } from '../core/themes.ts';
+import { getThemeRadiusPx, resolveBrandTheme } from '../core/themes.ts';
 import type { ReportInputData, ThemeSpec } from '../core/types.ts';
 
 /**
@@ -10,6 +10,7 @@ import type { ReportInputData, ThemeSpec } from '../core/types.ts';
 export function buildHyperTheme(report: ReportInputData) {
   const spec: ThemeSpec = resolveBrandTheme(report);
   const c = spec.colors;
+  const cardRadius = getThemeRadiusPx(spec, 'md');
 
   return {
     spec,
@@ -21,6 +22,7 @@ export function buildHyperTheme(report: ReportInputData) {
         foreground: c.text,
         muted: c.textMuted,
         primary: c.accent,
+        primaryInk: c.accentInk,
         primaryForeground: c.accentText,
         secondary: c.secondary,
         border: c.border,
@@ -46,7 +48,7 @@ export function buildHyperTheme(report: ReportInputData) {
         body: 1.6,
       },
       radii: {
-        card: spec.layoutStyle === 'editorial-broadsheet' ? 2 : 8,
+        card: cardRadius,
       },
       elements: {
         Heading: {
@@ -65,14 +67,14 @@ export function buildHyperTheme(report: ReportInputData) {
         card: {
           backgroundColor: '{colors.surface}',
           border: { width: 1, style: 'solid', color: '{colors.border}' },
-          borderRadius: spec.layoutStyle === 'editorial-broadsheet' ? 2 : 8,
+          borderRadius: cardRadius,
           padding: 20,
           gap: 12,
         },
         elevatedCard: {
           backgroundColor: '{colors.elevated}',
           border: { width: 1, style: 'solid', color: '{colors.border}' },
-          borderRadius: spec.layoutStyle === 'editorial-broadsheet' ? 2 : 8,
+          borderRadius: cardRadius,
           padding: 20,
           gap: 12,
         },

@@ -3,13 +3,16 @@ import {
   Divider,
   Heading,
   Image,
+  Line,
+  Rect,
   Row,
+  Svg,
   Text,
   defineElement,
   prop,
 } from '@hyper-elements/react';
 import { getAudienceEdition } from '../../core/audiences.ts';
-import { resolveBrandTheme } from '../../core/themes.ts';
+import { getThemeRadiusPx, resolveBrandTheme } from '../../core/themes.ts';
 import { getLogoRadiusPx, parsePayload } from './shared.ts';
 
 /**
@@ -45,6 +48,7 @@ export const NexoraCoverBanner = defineElement({
     const isResponsive = target === 'email' || target === 'web';
     const logoUrl = report.branding.logoDataUrl || '';
     const logoRadius = getLogoRadiusPx(report.branding.logoShape);
+    const cardRadius = getThemeRadiusPx(theme, 'lg');
 
     const footerMeta = report.isIllustrative
       ? `${audience.coverKicker} · Illustrative Sample Figures · Prepared by ${report.branding.preparedBy}`
@@ -57,10 +61,11 @@ export const NexoraCoverBanner = defineElement({
             backgroundColor: c.surface,
             border: {
               top: { width: 4, style: 'solid', color: c.text },
-              bottom: { width: 2, style: 'solid', color: c.text },
+              bottom: { width: 3, style: 'solid', color: c.text },
               left: { width: 1, style: 'solid', color: c.border },
               right: { width: 1, style: 'solid', color: c.border },
             },
+            borderRadius: cardRadius,
             padding: isCompact ? [22, 22] : [32, 32],
             gap: 12,
             alignItems: 'center',
@@ -80,7 +85,7 @@ export const NexoraCoverBanner = defineElement({
               fontWeight: 700,
               letterSpacing: 2,
               textTransform: 'uppercase',
-              color: c.accent,
+              color: c.accentInk,
               textAlign: 'center',
             }}
           >
@@ -134,27 +139,45 @@ export const NexoraCoverBanner = defineElement({
           >
             {footerMeta}
           </Text>
+          <Divider style={{ borderTop: { width: 1, style: 'solid', color: c.text }, width: '100%' }} />
         </Column>
       );
     }
 
     const isSwiss = theme.layoutStyle === 'swiss-precision';
+    const allowSvgStripe = isSwiss && target !== 'email';
 
     return (
       <Column
         style={{
           backgroundColor: c.surface,
           border: {
-            top: { width: isSwiss ? 5 : 1, style: 'solid', color: isSwiss ? c.accent : c.border },
+            top: allowSvgStripe
+              ? { width: 1, style: 'solid', color: c.border }
+              : { width: isSwiss ? 5 : 3, style: 'solid', color: c.accent },
             right: { width: 1, style: 'solid', color: c.border },
             bottom: { width: 1, style: 'solid', color: c.border },
             left: { width: 1, style: 'solid', color: c.border },
           },
-          borderRadius: isSwiss ? 8 : 10,
+          borderRadius: cardRadius,
           padding: isCompact ? [22, 22] : [30, 32],
           gap: 16,
         }}
       >
+        {allowSvgStripe ? (
+          <Svg
+            width={900}
+            height={5}
+            viewBox="0 0 900 5"
+            title="Modern Signal Swiss Precision Accent Bar"
+          >
+            <Rect x={0} y={0} width={300} height={5} style={{ fill: '#0B1120' }} />
+            <Rect x={300} y={0} width={300} height={5} style={{ fill: c.accent }} />
+            <Rect x={600} y={0} width={300} height={5} style={{ fill: c.secondary }} />
+            <Line x1={0} y1={5} x2={900} y2={5} style={{ stroke: c.border, strokeWidth: 0.5 }} />
+          </Svg>
+        ) : null}
+
         <Row stackOnMobile={true} style={{ gap: 16, alignItems: 'center' }}>
           <Row stackOnMobile={false} style={{ gap: 14, alignItems: 'center', flex: 2 }}>
             {logoUrl ? (
@@ -178,7 +201,7 @@ export const NexoraCoverBanner = defineElement({
                   fontWeight: 700,
                   letterSpacing: 1.3,
                   textTransform: 'uppercase',
-                  color: isSwiss ? c.text : c.accent,
+                  color: isSwiss ? c.text : c.accentInk,
                 }}
               >
                 {report.branding.companyName}
@@ -200,7 +223,7 @@ export const NexoraCoverBanner = defineElement({
                 fontFamily: theme.typography.monoFont,
                 fontSize: 12,
                 fontWeight: 700,
-                color: isSwiss ? c.accent : c.text,
+                color: isSwiss ? c.accentInk : c.text,
                 textAlign: 'right',
                 ...(isResponsive ? { mobile: { textAlign: 'left' } } : {}),
               }}
@@ -231,7 +254,7 @@ export const NexoraCoverBanner = defineElement({
               fontWeight: 700,
               letterSpacing: 1.1,
               textTransform: 'uppercase',
-              color: isSwiss ? c.accent : c.textMuted,
+              color: isSwiss ? c.accentInk : c.textMuted,
             }}
           >
             {`${audience.coverKicker} · ${report.branding.classification}`}

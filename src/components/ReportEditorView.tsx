@@ -13,7 +13,8 @@ import {
   formatPercent,
   SUPPORTED_CURRENCIES,
 } from '../core/calculations.ts';
-import { THEME_LIST } from '../core/themes.ts';
+import { containsConfidentialFinancialReference, sanitizeReportForAudience } from '../core/redaction.ts';
+import { applyThemePresetToReport, THEME_LIST } from '../core/themes.ts';
 import type {
   AudienceEditionId,
   CurrencyCode,
@@ -82,9 +83,15 @@ export function ReportEditorView({
   };
 
   const numInput = (raw: string): number => {
-    if (raw === '') return 0;
+    if (raw.trim() === '') return 0;
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const optionalNumInput = (raw: string): number | undefined => {
+    if (raw.trim() === '') return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : undefined;
   };
 
   const addMonth = () => {
@@ -413,16 +420,7 @@ export function ReportEditorView({
                   <button
                     key={theme.id}
                     type="button"
-                    onClick={() =>
-                      onChange({
-                        ...report,
-                        theme: theme.id,
-                        branding: {
-                          ...report.branding,
-                          accentColor: theme.colors.accent,
-                        },
-                      })
-                    }
+                    onClick={() => onChange(applyThemePresetToReport(report, theme.id))}
                     className={`text-left p-4 rounded-xl border transition-colors cursor-pointer ${
                       selected
                         ? 'border-[#0B1120] bg-slate-50 ring-1 ring-[#0B1120]'
@@ -511,6 +509,50 @@ export function ReportEditorView({
                 />
                 {fieldError('currentPeriod.customerCount')}
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Retention Rate % <span className="font-normal text-slate-500">(Optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={200}
+                    step="0.1"
+                    placeholder="e.g. 104"
+                    value={report.currentPeriod.retentionRatePct ?? ''}
+                    onChange={(e) =>
+                      updateField('currentPeriod', {
+                        ...report.currentPeriod,
+                        retentionRatePct: optionalNumInput(e.target.value),
+                      })
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono-num text-sm text-[#0B1120] focus:border-[#0891B2] focus:outline-none"
+                  />
+                  {fieldError('currentPeriod.retentionRatePct')}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Net Promoter Score <span className="font-normal text-slate-500">(Optional, -100..100)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={-100}
+                    max={100}
+                    step={1}
+                    placeholder="e.g. 62"
+                    value={report.currentPeriod.npsScore ?? ''}
+                    onChange={(e) =>
+                      updateField('currentPeriod', {
+                        ...report.currentPeriod,
+                        npsScore: optionalNumInput(e.target.value),
+                      })
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono-num text-sm text-[#0B1120] focus:border-[#0891B2] focus:outline-none"
+                  />
+                  {fieldError('currentPeriod.npsScore')}
+                </div>
+              </div>
               <div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-4 text-xs">
                 <div>
                   <span className="text-slate-500">Computed Net Profit</span>
@@ -585,6 +627,50 @@ export function ReportEditorView({
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono-num text-sm text-[#0B1120] focus:border-[#0891B2] focus:outline-none"
                 />
                 {fieldError('previousPeriod.customerCount')}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Prior Retention Rate % <span className="font-normal text-slate-500">(Optional)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={200}
+                    step="0.1"
+                    placeholder="e.g. 98"
+                    value={report.previousPeriod.retentionRatePct ?? ''}
+                    onChange={(e) =>
+                      updateField('previousPeriod', {
+                        ...report.previousPeriod,
+                        retentionRatePct: optionalNumInput(e.target.value),
+                      })
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono-num text-sm text-[#0B1120] focus:border-[#0891B2] focus:outline-none"
+                  />
+                  {fieldError('previousPeriod.retentionRatePct')}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Prior NPS <span className="font-normal text-slate-500">(Optional, -100..100)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={-100}
+                    max={100}
+                    step={1}
+                    placeholder="e.g. 54"
+                    value={report.previousPeriod.npsScore ?? ''}
+                    onChange={(e) =>
+                      updateField('previousPeriod', {
+                        ...report.previousPeriod,
+                        npsScore: optionalNumInput(e.target.value),
+                      })
+                    }
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono-num text-sm text-[#0B1120] focus:border-[#0891B2] focus:outline-none"
+                  />
+                  {fieldError('previousPeriod.npsScore')}
+                </div>
               </div>
               <div className="pt-3 border-t border-slate-200 grid grid-cols-2 gap-4 text-xs">
                 <div>
@@ -999,6 +1085,55 @@ export function ReportEditorView({
                 }
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-[#0B1120] leading-relaxed focus:border-[#0891B2] focus:outline-none"
               />
+            </div>
+
+            <div className="pt-4 border-t border-slate-200 space-y-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Client &amp; Partner Safe Summary Override{' '}
+                  <span className="font-normal text-slate-500">(Optional)</span>
+                </label>
+                <span className="text-[11px] text-slate-500">
+                  Used automatically as the primary summary in Client &amp; Partner Edition
+                </span>
+              </div>
+              <textarea
+                rows={2}
+                placeholder="Optional external-safe summary highlighting delivered customer value, retention, and solution adoption (avoid OpEx, net profit, or margin figures)."
+                value={report.narrative.clientSummary ?? ''}
+                onChange={(e) =>
+                  updateField('narrative', {
+                    ...report.narrative,
+                    clientSummary: e.target.value || undefined,
+                  })
+                }
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-[#0B1120] leading-relaxed focus:border-[#0891B2] focus:outline-none"
+              />
+              {(() => {
+                const rawClientText = report.narrative.clientSummary?.trim();
+                const hasClientLeak = rawClientText
+                  ? containsConfidentialFinancialReference(rawClientText, report, metrics)
+                  : false;
+                const isClientMode = (report.audienceEdition ?? 'board') === 'client';
+                if (!hasClientLeak && !isClientMode) return null;
+                const sanitizedPreview = sanitizeReportForAudience(report, 'client');
+                return (
+                  <div
+                    className={`rounded-lg border px-3.5 py-2.5 text-xs leading-relaxed ${
+                      hasClientLeak
+                        ? 'border-amber-300 bg-amber-50 text-amber-950'
+                        : 'border-cyan-200 bg-cyan-50/60 text-cyan-950'
+                    }`}
+                  >
+                    <div className="font-semibold">
+                      {hasClientLeak
+                        ? 'Confidential terms or internal ratios detected in Client Summary Override — automatic redaction fallback will apply:'
+                        : 'Live Client & Partner Edition Redacted Narrative Preview:'}
+                    </div>
+                    <p className="mt-1 text-slate-700">{sanitizedPreview.report.narrative.overview}</p>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 

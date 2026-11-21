@@ -9,17 +9,17 @@ import {
 } from '@hyper-elements/react';
 import { getAudienceEdition } from '../../core/audiences.ts';
 import { computeTrendAnalysis, filterTrendForAudience } from '../../core/intelligence.ts';
-import { resolveBrandTheme } from '../../core/themes.ts';
+import { getThemeRadiusPx, resolveBrandTheme } from '../../core/themes.ts';
 import { parsePayload, resolveHeroDetails, signalHexColor, signalSymbol } from './shared.ts';
 
 /**
- * 2. NexoraHeroKpi — Audience-Aware Dominant Hero KPI + Rolling 3M Signal + Business Health
+ * 2. NexoraHeroKpi — Audience-Aware Dominant Hero KPI + Rolling 3M Signal + Health/Trajectory
  */
 export const NexoraHeroKpi = defineElement({
   type: 'nexora.HeroKpi',
   label: 'NEXORA Hero KPI',
   description:
-    'Audience-targeted flagship KPI card paired with Rolling 3-Month Momentum signal and Executive Health status.',
+    'Audience-targeted flagship KPI card paired with Rolling 3-Month Momentum signal and Executive Health or Partner Delivery status.',
   props: {
     payloadJson: prop.text({ label: 'Report Payload JSON', required: true }),
     target: prop.choice(['email', 'web', 'document', 'canvas'], {
@@ -48,6 +48,14 @@ export const NexoraHeroKpi = defineElement({
     const momentumColor = signalHexColor(trend.overallSignal, c);
     const isCompact = target === 'email' || target === 'canvas';
     const isResponsive = target === 'email' || target === 'web';
+    const radius = getThemeRadiusPx(theme, 'md');
+
+    const statusLabel = audience.redactInternalExpenses
+      ? 'Partner Delivery Assessment'
+      : 'Executive Health Assessment';
+    const statusValue = audience.redactInternalExpenses
+      ? metrics.clientSafeTrajectory
+      : metrics.healthStatus;
 
     return (
       <Column
@@ -59,7 +67,7 @@ export const NexoraHeroKpi = defineElement({
             bottom: { width: 1, style: 'solid', color: c.border },
             left: { width: 1, style: 'solid', color: c.border },
           },
-          borderRadius: 8,
+          borderRadius: radius,
           padding: isCompact ? [20, 20] : [24, 28],
           gap: 16,
         }}
@@ -85,7 +93,7 @@ export const NexoraHeroKpi = defineElement({
                 fontSize: isCompact ? 32 : 40,
                 fontWeight: 700,
                 lineHeight: 1.06,
-                color: c.accent,
+                color: c.accentInk,
                 ...(isResponsive ? { mobile: { fontSize: 28 } } : {}),
               }}
             >
@@ -190,7 +198,7 @@ export const NexoraHeroKpi = defineElement({
                 color: c.textMuted,
               }}
             >
-              Executive Health Assessment
+              {statusLabel}
             </Text>
             <Text
               style={{
@@ -200,7 +208,7 @@ export const NexoraHeroKpi = defineElement({
                 color: c.text,
               }}
             >
-              {metrics.healthStatus}
+              {statusValue}
             </Text>
             <Text
               style={{

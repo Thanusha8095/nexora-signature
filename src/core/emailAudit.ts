@@ -79,7 +79,10 @@ export function auditEmailHtml(emailHtml: string, report: ReportInputData): Emai
 
   const theme = resolveBrandTheme(report);
   const contrastRatioPrimary = getContrastRatio(theme.colors.text, theme.colors.surface);
-  const contrastRatioAccent = getContrastRatio(theme.colors.accent, theme.colors.elevated);
+  const contrastRatioAccent = Math.min(
+    getContrastRatio(theme.colors.accentInk, theme.colors.surface),
+    getContrastRatio(theme.colors.accentInk, theme.colors.elevated)
+  );
 
   const checks: EmailCompatibilityCheck[] = [
     {
@@ -152,8 +155,8 @@ export function auditEmailHtml(emailHtml: string, report: ReportInputData): Emai
       id: 'a11y-contrast',
       label: 'WCAG AA Surface Contrast Ratio',
       category: 'Accessibility',
-      status: contrastRatioPrimary >= 4.5 ? 'pass' : 'warn',
-      detail: `Primary text/surface contrast is ${contrastRatioPrimary.toFixed(1)}:1 (WCAG AA requires >= 4.5:1); hero accent contrast is ${contrastRatioAccent.toFixed(1)}:1.`,
+      status: contrastRatioPrimary >= 4.5 && contrastRatioAccent >= 4.5 ? 'pass' : 'warn',
+      detail: `Primary text/surface contrast is ${contrastRatioPrimary.toFixed(1)}:1 (WCAG AA >= 4.5:1); accentInk small-text contrast is ${contrastRatioAccent.toFixed(1)}:1.`,
     },
     {
       id: 'a11y-lang',

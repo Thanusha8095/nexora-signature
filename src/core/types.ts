@@ -99,6 +99,7 @@ export interface ReportNarrative {
   achievements: string;
   challenges: string;
   closingTakeaway: string;
+  clientSummary?: string;
 }
 
 export interface SimulationAssumptions {
@@ -124,11 +125,7 @@ export interface ReportInputData {
   theme: ReportThemeId;
   branding: CompanyBranding;
   currentPeriod: PeriodMetricsInput;
-  previousPeriod: {
-    revenue: number;
-    expenses: number;
-    customerCount: number;
-  };
+  previousPeriod: PeriodMetricsInput;
   monthlySeries: MonthlyPoint[];
   revenueCategories: CategoryItem[];
   expenseCategories: CategoryItem[];
@@ -158,6 +155,12 @@ export type BusinessHealthStatus =
   | 'Margin Pressure'
   | 'Contraction Watch';
 
+export type ClientTrajectoryStatus =
+  | 'Strong Partner Momentum'
+  | 'Steady Expansion'
+  | 'Retention Focus'
+  | 'Scale Moderation';
+
 export interface ComputedMetrics {
   netProfit: number;
   previousNetProfit: number;
@@ -172,6 +175,7 @@ export interface ComputedMetrics {
   previousRevenuePerCustomer: number | null;
   arpuGrowthPct: number | null;
   operatingExpenseRatioPct: number;
+  annualizedRevenueEstimate: number;
   monthlyWithProfit: ComputedMonthlyPoint[];
   revenueCategoriesComputed: ComputedCategoryItem[];
   expenseCategoriesComputed: ComputedCategoryItem[];
@@ -183,7 +187,10 @@ export interface ComputedMetrics {
   averageMonthlyProfit: number;
   bestMonth: ComputedMonthlyPoint | null;
   worstMonth: ComputedMonthlyPoint | null;
+  bestRevenueMonth: ComputedMonthlyPoint | null;
+  worstRevenueMonth: ComputedMonthlyPoint | null;
   healthStatus: BusinessHealthStatus;
+  clientSafeTrajectory: ClientTrajectoryStatus;
 }
 
 export interface ExecutiveInsight {
@@ -287,6 +294,7 @@ export interface ThemeSpec {
     text: string;
     textMuted: string;
     accent: string;
+    accentInk: string;
     accentText: string;
     secondary: string;
     border: string;

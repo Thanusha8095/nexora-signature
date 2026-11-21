@@ -21,7 +21,6 @@ import {
 } from '@hyper-elements/react';
 import { getAudienceEdition, type ReportSectionKey } from '../core/audiences.ts';
 import {
-  computeReportMetrics,
   formatCurrency,
   formatNumber,
   formatPercent,
@@ -34,7 +33,9 @@ import {
   generateExecutiveInsights,
   generateStrategicRecommendations,
 } from '../core/intelligence.ts';
+import { sanitizeReportForAudience } from '../core/redaction.ts';
 import { sanitizeHttpUrl } from '../core/security.ts';
+import { getThemeRadiusPx } from '../core/themes.ts';
 import type { ReportInputData, ThemeSpec } from '../core/types.ts';
 import { buildHyperTheme } from './hyperTheme.ts';
 import {
@@ -51,6 +52,10 @@ import {
 } from './custom/index.ts';
 
 export type NexoraRootMode = HyperTarget;
+
+export interface BuildNexoraTreeOptions {
+  omitDomRunningChrome?: boolean;
+}
 
 const ROMAN_NUMERALS = ['I.', 'II.', 'III.', 'IV.', 'V.', 'VI.', 'VII.', 'VIII.', 'IX.', 'X.'];
 
@@ -79,7 +84,7 @@ function renderSectionHeading(
         color: c.text,
       }}
     >
-      {prefix ? <Span style={{ color: c.accent }}>{prefix}</Span> : null}
+      {prefix ? <Span style={{ color: c.accentInk }}>{prefix}</Span> : null}
       {title}
     </Heading>
   );
@@ -145,90 +150,67 @@ function renderDataTable(
   );
 }
 
+const SECTION_WEIGHTS: Record<
+  ReportSectionKey | 'intelligence-observations' | 'intelligence-recommendations',
+  number
+> = {
+  'story-arc': 24,
+  summary: 30,
+  comparison: 38,
+  trends: 52,
+  breakdowns: 46,
+  segments: 34,
+  intelligence: 86,
+  'intelligence-observations': 52,
+  'intelligence-recommendations': 38,
+  priorities: 36,
+  simulation: 52,
+  closing: 26,
+};
+
 /**
  * Builds the canonical @hyper-elements/react root element (<Email>, <Page>, <Document>, or <Canvas>)
- * from the shared NEXORA ReportInputData model.
+ * from the shared NEXORA ReportInputData model with automatic Client pre-render redaction.
  */
 export function buildNexoraReportTree(
-  report: ReportInputData,
-  mode: NexoraRootMode
+  rawReport: ReportInputData,
+  mode: NexoraRootMode,
+  options?: BuildNexoraTreeOptions
 ): React.ReactElement {
-  const rawMetrics = computeReportMetrics(report);
-  const { spec: theme, theme: hyperTheme } = buildHyperTheme(report);
-  const audience = getAudienceEdition(report.audienceEdition);
-  const redact = audience.redactInternalExpenses;
+  const { report: safeReport, metrics, isRedacted: redact } = sanitizeReportForAudience(rawReport);
+  const { spec: theme, theme: hyperTheme } = buildHyperTheme(safeReport);
+  const audience = getAudienceEdition(safeReport.audienceEdition);
+  const radius = getThemeRadiusPx(theme, 'md');
 
   const trendAnalysis = filterTrendForAudience(
-    computeTrendAnalysis(report, rawMetrics),
+    computeTrendAnalysis(safeReport, metrics),
     redact
   );
-  const rawInsights = generateExecutiveInsights(report, rawMetrics);
-  const insights = filterInsightsForAudience(rawInsights, trendAnalysis, redact);
+  const rawInsights = generateExecutiveInsights(safeReport, metrics);
+  const insights = filterInsightsForAudience(rawInsights, trendAnalysis, redact, audience.id);
   const recommendations = filterRecommendationsForAudience(
-    generateStrategicRecommendations(report, rawMetrics, rawInsights),
+    generateStrategicRecommendations(safeReport, metrics, rawInsights, audience.id),
     redact
   );
-
-  const safeReportForPayload: ReportInputData = redact
-    ? {
-        ...report,
-        currentPeriod: { ...report.currentPeriod, expenses: 0 },
-        previousPeriod: { ...report.previousPeriod, expenses: 0 },
-        monthlySeries: report.monthlySeries.map((m) => ({ ...m, expenses: 0 })),
-        expenseCategories: [],
-        segments: report.segments.map((s) => ({ ...s, marginPct: 0 })),
-        simulation: undefined,
-      }
-    : report;
-
-  const metrics = redact
-    ? {
-        ...rawMetrics,
-        netProfit: 0,
-        previousNetProfit: 0,
-        profitMarginPct: 0,
-        previousProfitMarginPct: 0,
-        marginDeltaPts: 0,
-        expenseGrowthPct: null,
-        profitGrowthPct: null,
-        operatingExpenseRatioPct: 0,
-        averageMonthlyProfit: 0,
-        monthlyWithProfit: rawMetrics.monthlyWithProfit.map((m) => ({
-          ...m,
-          expenses: 0,
-          netProfit: 0,
-          marginPct: 0,
-        })),
-        expenseCategoriesComputed: [],
-        expenseCategoryTotal: 0,
-        segmentsComputed: rawMetrics.segmentsComputed.map((s) => ({ ...s, marginPct: 0 })),
-        bestMonth: rawMetrics.bestMonth
-          ? { ...rawMetrics.bestMonth, expenses: 0, netProfit: 0, marginPct: 0 }
-          : null,
-        worstMonth: rawMetrics.worstMonth
-          ? { ...rawMetrics.worstMonth, expenses: 0, netProfit: 0, marginPct: 0 }
-          : null,
-      }
-    : rawMetrics;
 
   const c = theme.colors;
-  const cur = report.currency;
+  const cur = safeReport.currency;
 
   const payload: SerializedReportPayload = {
-    report: safeReportForPayload,
+    report: safeReport,
     metrics,
     trendAnalysis,
     insights,
     recommendations,
-    accentOverride: report.branding.accentColor,
+    accentOverride: safeReport.branding.accentColor,
   };
   const payloadJson = JSON.stringify(payload);
   const compact = mode === 'email';
 
   const comparisonHeaders = [
     'Financial Metric',
-    report.reportingPeriod,
-    report.previousPeriodLabel,
+    safeReport.reportingPeriod,
+    safeReport.previousPeriodLabel,
     'Period Change',
   ];
 
@@ -237,8 +219,8 @@ export function buildNexoraReportTree(
       sensitive: false,
       row: [
         'Total Revenue',
-        formatCurrency(report.currentPeriod.revenue, cur, { compact }),
-        formatCurrency(report.previousPeriod.revenue, cur, { compact }),
+        formatCurrency(safeReport.currentPeriod.revenue, cur, { compact }),
+        formatCurrency(safeReport.previousPeriod.revenue, cur, { compact }),
         formatPercent(metrics.revenueGrowthPct, { signed: true }),
       ],
     },
@@ -246,8 +228,8 @@ export function buildNexoraReportTree(
       sensitive: true,
       row: [
         'Operating Expenses',
-        formatCurrency(report.currentPeriod.expenses, cur, { compact }),
-        formatCurrency(report.previousPeriod.expenses, cur, { compact }),
+        formatCurrency(safeReport.currentPeriod.expenses, cur, { compact }),
+        formatCurrency(safeReport.previousPeriod.expenses, cur, { compact }),
         formatPercent(metrics.expenseGrowthPct, { signed: true }),
       ],
     },
@@ -273,8 +255,8 @@ export function buildNexoraReportTree(
       sensitive: false,
       row: [
         'Active Customers',
-        formatNumber(report.currentPeriod.customerCount),
-        formatNumber(report.previousPeriod.customerCount),
+        formatNumber(safeReport.currentPeriod.customerCount),
+        formatNumber(safeReport.previousPeriod.customerCount),
         formatPercent(metrics.customerGrowthPct, { signed: true }),
       ],
     },
@@ -294,15 +276,15 @@ export function buildNexoraReportTree(
   ];
 
   const comparisonRows = rawComparisonRows
-    .filter((entry) => !(audience.redactInternalExpenses && entry.sensitive))
+    .filter((entry) => !(redact && entry.sensitive))
     .map((entry) => entry.row);
 
-  const segmentHeaders = audience.redactInternalExpenses
-    ? ['Operating Segment', 'Segment Revenue', 'Mix Share', 'YoP Growth']
+  const segmentHeaders = redact
+    ? ['Operating Segment', 'Partner Reach Revenue', 'Mix Share', 'YoP Growth']
     : ['Operating Segment', 'Segment Revenue', 'Mix Share', 'YoP Growth', 'Net Margin'];
 
   const segmentRows: string[][] = metrics.segmentsComputed.map((seg) =>
-    audience.redactInternalExpenses
+    redact
       ? [
           seg.name,
           formatCurrency(seg.revenue, cur, { compact }),
@@ -318,17 +300,18 @@ export function buildNexoraReportTree(
         ]
   );
 
-  const prioritiesHeaders = ['Priority Initiative', 'Horizon', 'Owner', 'Expected Impact'];
-  const prioritiesRows: string[][] = report.strategicPriorities.map((sp) => [
-    sp.title,
-    sp.horizon,
-    sp.owner,
-    sp.targetImpact,
-  ]);
+  const prioritiesHeaders = redact
+    ? ['Partnership Initiative', 'Horizon', 'Client Impact']
+    : ['Priority Initiative', 'Horizon', 'Owner', 'Expected Impact'];
+  const prioritiesRows: string[][] = safeReport.strategicPriorities.map((sp) =>
+    redact
+      ? [sp.title, sp.horizon, sp.targetImpact]
+      : [sp.title, sp.horizon, sp.owner, sp.targetImpact]
+  );
 
-  const safeWebsite = sanitizeHttpUrl(report.branding.website);
-  const previewText = `${report.branding.companyName} (${audience.name}) · ${report.reportingPeriod} — Revenue ${formatCurrency(report.currentPeriod.revenue, cur)}, ${formatNumber(report.currentPeriod.customerCount)} customers.`;
-  const reportDocTitle = `${report.branding.companyName} — ${report.title}`;
+  const safeWebsite = sanitizeHttpUrl(safeReport.branding.website);
+  const previewText = `${safeReport.branding.companyName} (${audience.name}) · ${safeReport.reportingPeriod} — Revenue ${formatCurrency(safeReport.currentPeriod.revenue, cur)}, ${formatNumber(safeReport.currentPeriod.customerCount)} customers.`;
+  const reportDocTitle = `${safeReport.branding.companyName} — ${safeReport.title}`;
 
   let headingCounter = 0;
 
@@ -348,23 +331,27 @@ export function buildNexoraReportTree(
           style={{
             backgroundColor: c.surface,
             border: { width: 1, style: 'solid', color: c.border },
-            borderRadius: 8,
+            borderRadius: radius,
             padding: compact ? [16, 18] : [22, 24],
             gap: 10,
           }}
         >
-          {renderSectionHeading(idx, 'Executive Summary', theme)}
+          {renderSectionHeading(idx, audience.summaryHeading, theme)}
           <Text style={{ fontSize: 14, lineHeight: 1.6, color: c.text }}>
             <Span style={{ fontWeight: 700 }}>Overview: </Span>
-            {report.narrative.overview}
+            {safeReport.narrative.overview}
           </Text>
           <Text style={{ fontSize: 13, lineHeight: 1.6, color: c.textMuted }}>
-            <Span style={{ fontWeight: 700, color: c.text }}>Key Achievements: </Span>
-            {report.narrative.achievements}
+            <Span style={{ fontWeight: 700, color: c.text }}>
+              {redact ? 'Partner Highlights: ' : 'Key Achievements: '}
+            </Span>
+            {safeReport.narrative.achievements}
           </Text>
           <Text style={{ fontSize: 13, lineHeight: 1.6, color: c.textMuted }}>
-            <Span style={{ fontWeight: 700, color: c.text }}>Operational Challenges: </Span>
-            {report.narrative.challenges}
+            <Span style={{ fontWeight: 700, color: c.text }}>
+              {redact ? 'Delivery Priorities: ' : 'Operational Challenges: '}
+            </Span>
+            {safeReport.narrative.challenges}
           </Text>
         </Column>
       );
@@ -376,9 +363,7 @@ export function buildNexoraReportTree(
         <Column key="trends" style={{ gap: 10 }}>
           {renderSectionHeading(
             idx,
-            audience.redactInternalExpenses
-              ? 'Revenue Trajectory'
-              : 'Financial Performance & Monthly Trajectory',
+            redact ? 'Revenue Trajectory' : 'Financial Performance & Monthly Trajectory',
             theme
           )}
           <NexoraTrendChart payloadJson={payloadJson} target={mode} />
@@ -391,6 +376,7 @@ export function buildNexoraReportTree(
     }
 
     if (key === 'comparison') {
+      if (redact || comparisonRows.length === 0) return null;
       const idx = headingCounter++;
       return (
         <Column
@@ -398,7 +384,7 @@ export function buildNexoraReportTree(
           style={{
             backgroundColor: c.surface,
             border: { width: 1, style: 'solid', color: c.border },
-            borderRadius: 8,
+            borderRadius: radius,
             padding: compact ? [14, 16] : [20, 22],
             gap: 12,
           }}
@@ -418,16 +404,14 @@ export function buildNexoraReportTree(
           style={{
             backgroundColor: c.surface,
             border: { width: 1, style: 'solid', color: c.border },
-            borderRadius: 8,
+            borderRadius: radius,
             padding: compact ? [14, 16] : [20, 22],
             gap: 12,
           }}
         >
           {renderSectionHeading(
             idx,
-            audience.redactInternalExpenses
-              ? 'Operating Segment Reach'
-              : 'Segment Contribution & Unit Margin',
+            redact ? 'Operating Segment Reach' : 'Segment Contribution & Unit Margin',
             theme
           )}
           {renderDataTable(segmentHeaders, segmentRows, theme, compact)}
@@ -436,6 +420,7 @@ export function buildNexoraReportTree(
     }
 
     if (key === 'intelligence') {
+      if (redact) return null;
       if (insightsPart === 'recommendations') {
         return (
           <NexoraInsightsBlock
@@ -464,19 +449,19 @@ export function buildNexoraReportTree(
           style={{
             backgroundColor: c.surface,
             border: { width: 1, style: 'solid', color: c.border },
-            borderRadius: 8,
+            borderRadius: radius,
             padding: compact ? [14, 16] : [20, 22],
             gap: 12,
           }}
         >
-          {renderSectionHeading(idx, 'Leadership Strategic Priorities', theme)}
+          {renderSectionHeading(idx, audience.prioritiesHeading, theme)}
           {renderDataTable(prioritiesHeaders, prioritiesRows, theme, compact)}
         </Column>
       );
     }
 
     if (key === 'simulation') {
-      if (!report.simulation?.includeInReport || audience.redactInternalExpenses) return null;
+      if (!safeReport.simulation?.includeInReport || redact) return null;
       return <NexoraSimulationAppendix key="simulation" payloadJson={payloadJson} target={mode} />;
     }
 
@@ -487,7 +472,7 @@ export function buildNexoraReportTree(
           style={{
             backgroundColor: c.elevated,
             border: { width: 1, style: 'solid', color: c.border },
-            borderRadius: 8,
+            borderRadius: radius,
             padding: compact ? [16, 18] : [22, 24],
             gap: 10,
           }}
@@ -501,22 +486,22 @@ export function buildNexoraReportTree(
               color: c.text,
             }}
           >
-            Closing Executive Takeaway
+            {audience.closingHeading}
           </Heading>
           <Text style={{ fontSize: 13, lineHeight: 1.6, color: c.text }}>
-            {report.narrative.closingTakeaway}
+            {safeReport.narrative.closingTakeaway}
           </Text>
           <Divider style={{ borderTop: { width: 1, style: 'solid', color: c.border } }} />
           <Column style={{ gap: 4 }}>
             <Text style={{ fontSize: 12, fontWeight: 600, color: c.text }}>
-              {`${report.branding.companyName} · ${report.branding.preparedBy}`}
+              {`${safeReport.branding.companyName} · ${safeReport.branding.preparedBy}`}
             </Text>
             <Text style={{ fontSize: 12, color: c.textMuted }}>
-              {report.branding.contactEmail}
+              {safeReport.branding.contactEmail}
               {safeWebsite ? (
                 <>
                   {' · '}
-                  <Link href={safeWebsite} style={{ color: c.accent }}>
+                  <Link href={safeWebsite} style={{ color: c.accentInk }}>
                     {safeWebsite}
                   </Link>
                 </>
@@ -524,7 +509,7 @@ export function buildNexoraReportTree(
             </Text>
             {audience.showGovernanceDisclaimer ? (
               <Text style={{ fontSize: 11, color: c.textMuted }}>
-                {report.branding.disclaimer}
+                {safeReport.branding.disclaimer}
               </Text>
             ) : null}
           </Column>
@@ -538,11 +523,15 @@ export function buildNexoraReportTree(
   const orderedSections = audience.sectionOrder;
 
   if (mode === 'canvas') {
+    const extraTitleLines = Math.max(0, Math.ceil(safeReport.title.length / 56) - 1);
+    const extraSubtitleLines = Math.max(0, Math.ceil(safeReport.subtitle.length / 88) - 1);
+    const dynamicHeight = Math.max(800, 800 + extraTitleLines * 36 + extraSubtitleLines * 24);
+
     return (
       <Canvas
         theme={hyperTheme}
         width={1200}
-        height={800}
+        height={dynamicHeight}
         title={reportDocTitle}
         lang="en"
       >
@@ -566,106 +555,110 @@ export function buildNexoraReportTree(
   }
 
   if (mode === 'document') {
-    const page1Keys: ReportSectionKey[] = [];
-    const page2Keys: ReportSectionKey[] = [];
-    const page3Nodes: React.ReactNode[] = [];
-    const page4Nodes: React.ReactNode[] = [];
-    const hasSimulationAppendix = Boolean(
-      report.simulation?.includeInReport && !audience.redactInternalExpenses
-    );
+    // Dynamic, weighted pagination honoring exact stakeholder sectionOrder & emitting zero empty pages
+    const pageBuckets: React.ReactNode[][] = [];
+    let currentBucket: React.ReactNode[] = [
+      <NexoraCoverBanner key="cover" payloadJson={payloadJson} target="document" />,
+      <NexoraHeroKpi key="hero" payloadJson={payloadJson} target="document" />,
+      <NexoraKpiStrip key="kpi-strip" payloadJson={payloadJson} target="document" />,
+    ];
+    let currentWeight = 62;
+    const maxPageWeight = 88;
+
+    const pushItem = (node: React.ReactNode, weight: number) => {
+      if (!node) return;
+      if (currentBucket.length > 0 && currentWeight + weight > maxPageWeight) {
+        pageBuckets.push(currentBucket);
+        currentBucket = [];
+        currentWeight = 0;
+      }
+      currentBucket.push(node);
+      currentWeight += weight;
+    };
 
     for (const key of orderedSections) {
-      if (key === 'story-arc' || key === 'summary') {
-        page1Keys.push(key);
-      } else if (key === 'trends' || key === 'breakdowns' || key === 'comparison' || key === 'segments') {
-        page2Keys.push(key);
-      } else if (key === 'intelligence') {
-        page3Nodes.push(renderSectionNode('intelligence', 'trend-observations'));
-        page4Nodes.push(renderSectionNode('intelligence', 'recommendations'));
-      } else if (key === 'priorities' || (!hasSimulationAppendix && key === 'closing')) {
-        page4Nodes.push(renderSectionNode(key));
-      } else if (key === 'simulation' || (hasSimulationAppendix && key === 'closing')) {
-        // Rendered on Page 5 when simulation appendix is active
+      if (key === 'intelligence') {
+        const obsNode = renderSectionNode('intelligence', 'trend-observations');
+        if (obsNode) pushItem(obsNode, SECTION_WEIGHTS['intelligence-observations']);
+        const recNode = renderSectionNode('intelligence', 'recommendations');
+        if (recNode) pushItem(recNode, SECTION_WEIGHTS['intelligence-recommendations']);
       } else {
-        page4Nodes.push(renderSectionNode(key));
+        const node = renderSectionNode(key);
+        if (node) pushItem(node, SECTION_WEIGHTS[key] ?? 32);
       }
     }
+
+    if (currentBucket.length > 0) {
+      pageBuckets.push(currentBucket);
+    }
+
+    const nonEmptyBuckets = pageBuckets.filter((b) => b.length > 0);
+    const omitChrome = options?.omitDomRunningChrome === true;
 
     return (
       <Document
         theme={hyperTheme}
         size="A4"
         orientation="portrait"
-        margin={[14, 12, 16, 12]}
+        margin={[16, 12, 16, 12]}
         title={reportDocTitle}
         lang="en"
         style={{ gap: 16 }}
       >
-        <PageHeader style={{ padding: [0, 0, 8, 0] }}>
-          <Row stackOnMobile={false} style={{ gap: 8, alignItems: 'center' }}>
-            <Column style={{ flex: 1 }}>
-              <Text style={{ fontFamily: theme.typography.monoFont, fontSize: 10, color: c.textMuted }}>
-                {`${report.branding.companyName} · ${audience.name}`}
-              </Text>
-            </Column>
-            <Column style={{ flex: 'none' }}>
-              <Text
-                style={{
-                  fontFamily: theme.typography.monoFont,
-                  fontSize: 10,
-                  color: c.textMuted,
-                  textAlign: 'right',
-                }}
-              >
-                {report.reportingPeriod}
-              </Text>
-            </Column>
-          </Row>
-        </PageHeader>
-
-        <PageFooter style={{ padding: [8, 0, 0, 0] }}>
-          <Row stackOnMobile={false} style={{ gap: 8, alignItems: 'center' }}>
-            <Column style={{ flex: 1 }}>
-              <Text style={{ fontFamily: theme.typography.monoFont, fontSize: 10, color: c.textMuted }}>
-                {`Generated by NEXORA Signature · Theme: ${theme.name}`}
-              </Text>
-            </Column>
-            <Column style={{ flex: 'none' }}>
-              <Text
-                style={{
-                  fontFamily: theme.typography.monoFont,
-                  fontSize: 10,
-                  color: c.textMuted,
-                  textAlign: 'right',
-                }}
-              >
-                Page <PageNumber /> of <PageNumber total />
-              </Text>
-            </Column>
-          </Row>
-        </PageFooter>
-
-        <NexoraCoverBanner payloadJson={payloadJson} target="document" />
-        <NexoraHeroKpi payloadJson={payloadJson} target="document" />
-        <NexoraKpiStrip payloadJson={payloadJson} target="document" />
-        {page1Keys.map((k) => renderSectionNode(k))}
-
-        <PageBreak />
-        {page2Keys.map((k) => renderSectionNode(k))}
-
-        <PageBreak />
-        {page3Nodes}
-
-        <PageBreak />
-        {page4Nodes}
-
-        {hasSimulationAppendix ? (
-          <>
-            <PageBreak />
-            {renderSectionNode('simulation')}
-            {renderSectionNode('closing')}
-          </>
+        {!omitChrome ? (
+          <PageHeader style={{ padding: [0, 0, 8, 0] }}>
+            <Row stackOnMobile={false} style={{ gap: 8, alignItems: 'center' }}>
+              <Column style={{ flex: 1 }}>
+                <Text style={{ fontFamily: theme.typography.monoFont, fontSize: 10, color: c.textMuted }}>
+                  {`${safeReport.branding.companyName} · ${audience.name}`}
+                </Text>
+              </Column>
+              <Column style={{ flex: 'none' }}>
+                <Text
+                  style={{
+                    fontFamily: theme.typography.monoFont,
+                    fontSize: 10,
+                    color: c.textMuted,
+                    textAlign: 'right',
+                  }}
+                >
+                  {safeReport.reportingPeriod}
+                </Text>
+              </Column>
+            </Row>
+          </PageHeader>
         ) : null}
+
+        {!omitChrome ? (
+          <PageFooter style={{ padding: [8, 0, 0, 0] }}>
+            <Row stackOnMobile={false} style={{ gap: 8, alignItems: 'center' }}>
+              <Column style={{ flex: 1 }}>
+                <Text style={{ fontFamily: theme.typography.monoFont, fontSize: 10, color: c.textMuted }}>
+                  {`Generated by NEXORA Signature · Theme: ${theme.name}`}
+                </Text>
+              </Column>
+              <Column style={{ flex: 'none' }}>
+                <Text
+                  style={{
+                    fontFamily: theme.typography.monoFont,
+                    fontSize: 10,
+                    color: c.textMuted,
+                    textAlign: 'right',
+                  }}
+                >
+                  Page <PageNumber /> of <PageNumber total />
+                </Text>
+              </Column>
+            </Row>
+          </PageFooter>
+        ) : null}
+
+        {nonEmptyBuckets.map((bucket, idx) => (
+          <React.Fragment key={`doc-page-${idx}`}>
+            {idx > 0 ? <PageBreak /> : null}
+            {bucket}
+          </React.Fragment>
+        ))}
       </Document>
     );
   }

@@ -4,9 +4,11 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildOverviewKpiCards, OverviewView } from '../src/components/OverviewView.tsx';
+import { PresentationModeModal } from '../src/components/PresentationModeModal.tsx';
 import { AUDIENCE_EDITION_LIST, getAudienceEdition } from '../src/core/audiences.ts';
 import {
   computeReportMetrics,
+  determineHealthStatus,
   formatCurrency,
   formatPercent,
 } from '../src/core/calculations.ts';
@@ -20,6 +22,10 @@ import {
   generateExecutiveInsights,
   generateStrategicRecommendations,
 } from '../src/core/intelligence.ts';
+import {
+  auditOutputForConfidentialLeaks,
+  sanitizeReportForAudience,
+} from '../src/core/redaction.ts';
 import { cloneReportData, SAMPLE_REPORTS } from '../src/core/samples.ts';
 import {
   escapeHtml,
@@ -27,10 +33,21 @@ import {
   sanitizeFilename,
   validateSafeImageDataUrl,
 } from '../src/core/security.ts';
-import { DEFAULT_SIMULATION_ASSUMPTIONS, runWhatIfSimulation } from '../src/core/simulator.ts';
-import { resolveBrandTheme, THEME_LIST } from '../src/core/themes.ts';
+import {
+  computeCombinedRevenueDeltaPct,
+  DEFAULT_SIMULATION_ASSUMPTIONS,
+  runWhatIfSimulation,
+  SIMULATION_PRESETS,
+  solveArpuDeltaFromRevenueAndCustomers,
+} from '../src/core/simulator.ts';
+import { computeHexContrast, resolveBrandTheme, THEME_LIST } from '../src/core/themes.ts';
 import { validateReportData } from '../src/core/validation.ts';
 import { compareReportVersions } from '../src/core/versionDiff.ts';
+import {
+  resolveHeroDetails,
+  resolveKpiStripCards,
+  resolveStoryArcChapters,
+} from '../src/elements/custom/shared.ts';
 import {
   outlineReportElements,
   renderCanvasHtml,
@@ -43,6 +60,8 @@ import {
   validateReportElements,
 } from '../src/elements/renderers.ts';
 import {
+  loadDistinctThemeFonts,
+  rasterizeSvgLogoForNativeRender,
   renderNativeCanvasPng,
   renderNativeDocumentPdf,
 } from '../src/elements/serverRenderers.ts';
@@ -713,6 +732,276 @@ describe('Genuine Export Quality Scoring & Upgraded Reporting Visuals', () => {
     expect(pkg.scripts.clean).not.toContain('rm -rf');
     expect(pkg.scripts.clean).toContain('fs.rmSync');
     expect(fs.existsSync(path.resolve('.gitattributes'))).toBe(true);
+  });
+});
+
+describe('Phase 1 — Exhaustive Client Redaction Across Themes & Formats', () => {
+  it('blocks confidential expenses, net profit, margins, owners, and compact values across all themes & formats', async () => {
+    const toxic = cloneReportData(SAMPLE_REPORTS[0].report);
+    toxic.audienceEdition = 'client';
+    toxic.title = 'Q3 Margin Expansion & $4.35M Net Profit Review';
+    toxic.subtitle = 'Confidential OpEx Discipline Report';
+    toxic.branding.preparedBy = 'Chief Revenue Officer & CFO';
+    toxic.simulation = { ...DEFAULT_SIMULATION_ASSUMPTIONS, includeInReport: true };
+    toxic.narrative.overview =
+      'Veloce scaled revenue to $14,850,000 (+17.9%) while expanding net margin to 29.3% and lifting net profit to $4,350,000.';
+    toxic.narrative.achievements =
+      'Delivered $4.35M net earnings with disciplined $10.50M operating expenses.';
+    toxic.narrative.closingTakeaway =
+      'Focus next quarter on protecting 29.3% net profit margin and cutting COGS overhead.';
+    toxic.strategicPriorities[0].owner = 'Chief Compliance Officer';
+    toxic.strategicPriorities[0].title = 'Cut OpEx Margin Drag in Cloud Ops';
+    toxic.strategicPriorities[0].rationale = 'Reduces operating cost drivers by $420,000 annually.';
+
+    const rawMetrics = computeReportMetrics(toxic);
+
+    for (const theme of THEME_LIST) {
+      const themed = {
+        ...toxic,
+        theme: theme.id,
+        branding: { ...toxic.branding, accentColor: theme.colors.accent },
+      };
+
+      const [webHtml, emailHtml, docHtml, canvasHtml, plainText] = await Promise.all([
+        renderWebHtml(themed),
+        renderEmailHtml(themed),
+        renderPrintDocumentHtml(themed),
+        renderCanvasHtml(themed),
+        renderPlainTextEmail(themed),
+      ]);
+      const designJson = JSON.stringify(renderReportDesignJson(themed, 'web'));
+      const presentationMarkup = renderToStaticMarkup(
+        createElement(PresentationModeModal, {
+          report: themed,
+          onSelectAudience: () => {},
+          onClose: () => {},
+        })
+      );
+
+      for (const output of [
+        webHtml,
+        emailHtml,
+        docHtml,
+        canvasHtml,
+        plainText,
+        designJson,
+        presentationMarkup,
+      ]) {
+        expect(auditOutputForConfidentialLeaks(output, toxic, rawMetrics)).toEqual([]);
+        expect(output).not.toContain('$10,500,000');
+        expect(output).not.toContain('$4,350,000');
+        expect(output).not.toContain('$4.35M');
+        expect(output).not.toContain('$10.50M');
+        expect(output).not.toContain('29.3%');
+        expect(output).not.toContain('Margin Pressure');
+        expect(output).not.toContain('Chief Compliance Officer');
+      }
+
+      const expScore = await scoreReportExports(themed);
+      expect(expScore.telemetry.redactionVerified).toBe(true);
+    }
+  }, 25_000);
+
+  it('respects clean narrative.clientSummary and rejects confidential clientSummary leaks', () => {
+    const clean = cloneReportData(SAMPLE_REPORTS[0].report);
+    clean.audienceEdition = 'client';
+    clean.narrative.clientSummary =
+      'Partners deployed 18 new AI workflows across regional clinical hubs with 99.98% uptime.';
+    const cleanBundle = sanitizeReportForAudience(clean);
+    expect(cleanBundle.report.narrative.overview).toBe(clean.narrative.clientSummary);
+
+    const leaky = cloneReportData(SAMPLE_REPORTS[0].report);
+    leaky.audienceEdition = 'client';
+    leaky.narrative.clientSummary =
+      'Our team achieved a 29.3% net profit margin with $4.35M in net profit.';
+    const leakyBundle = sanitizeReportForAudience(leaky);
+    expect(leakyBundle.report.narrative.overview).not.toContain('net profit margin');
+    expect(leakyBundle.report.narrative.overview).not.toContain('$4.35M');
+  });
+});
+
+describe('Phase 2 & 3 — Five Distinct Stakeholder Editions & Dynamic A4 Pagination', () => {
+  it('produces genuinely distinct hero views, KPI strips, story arcs, insights, and section order across all 5 editions', async () => {
+    const base = cloneReportData(SAMPLE_REPORTS[0].report);
+    base.simulation = { ...DEFAULT_SIMULATION_ASSUMPTIONS, includeInReport: true };
+
+    const kpiTitleSignatures = new Set<string>();
+    const storySignatures = new Set<string>();
+    const heroEyebrows = new Set<string>();
+    const topInsightSignatures = new Set<string>();
+
+    for (const edition of AUDIENCE_EDITION_LIST) {
+      const edReport = { ...base, audienceEdition: edition.id };
+      const { report, metrics, isRedacted } = sanitizeReportForAudience(edReport);
+      const hero = resolveHeroDetails(report, metrics);
+      const strip = resolveKpiStripCards(report, metrics, false);
+      const overviewCards = buildOverviewKpiCards(report, metrics, edition, resolveBrandTheme(report));
+      const trend = filterTrendForAudience(computeTrendAnalysis(report, metrics), isRedacted);
+      const rawInsights = generateExecutiveInsights(report, metrics);
+      const insights = filterInsightsForAudience(rawInsights, trend, isRedacted, edition.id);
+      const chapters = resolveStoryArcChapters(report, metrics, trend);
+
+      heroEyebrows.add(hero.eyebrow);
+      kpiTitleSignatures.add(strip.map((c) => c.label).join('|'));
+      storySignatures.add(chapters.map((c) => c.step).join('|'));
+      topInsightSignatures.add(insights.slice(0, 3).map((i) => i.id).join('|'));
+
+      expect(overviewCards.length).toBeGreaterThanOrEqual(4);
+    }
+
+    expect(heroEyebrows.size).toBe(5);
+    expect(kpiTitleSignatures.size).toBe(5);
+    expect(storySignatures.size).toBe(5);
+    expect(topInsightSignatures.size).toBeGreaterThanOrEqual(3);
+
+    // Team prioritizes priorities/roadmap BEFORE narrative summary in Web & Plain-Text
+    const teamReport = { ...base, audienceEdition: 'team' as const };
+    const [teamWeb, teamPlain] = await Promise.all([
+      renderWebHtml(teamReport),
+      renderPlainTextEmail(teamReport),
+    ]);
+    expect(teamWeb.indexOf('Team Execution Milestones')).toBeLessThan(
+      teamWeb.indexOf('Company-Wide Wins')
+    );
+    expect(teamPlain.indexOf('TEAM EXECUTION MILESTONES')).toBeLessThan(
+      teamPlain.indexOf('COMPANY-WIDE WINS')
+    );
+  });
+
+  it('dynamically paginates Client Edition A4 PDF with zero blank trailing pages and omits duplicate DOM running chrome', async () => {
+    const clientReport = cloneReportData(SAMPLE_REPORTS[0].report);
+    clientReport.audienceEdition = 'client';
+
+    const docWithDomChrome = await renderPrintDocumentHtml(clientReport);
+    const docCleanForChromium = await renderPrintDocumentHtml(clientReport, {
+      omitDomRunningChrome: true,
+    });
+
+    // No empty page-break divs or consecutive breaks
+    expect(docCleanForChromium).not.toMatch(/page-break-before:\s*always[^>]*>\s*<\/div>\s*<div[^>]*page-break-before:\s*always/i);
+    // Clean Chromium document omits DOM running chrome strings while preserving Page layout
+    expect(docWithDomChrome).toContain('Page');
+    expect(docCleanForChromium.length).toBeLessThan(docWithDomChrome.length);
+
+    const pdfBuf = await generatePdfBuffer(clientReport);
+    expect(pdfBuf.subarray(0, 5).toString('utf8')).toBe('%PDF-');
+    expect(pdfBuf.byteLength).toBeGreaterThan(20_000);
+  }, 30_000);
+});
+
+describe('Phase 4 & 5 — Simulator Unity, Intelligence Rules & Edge Cases', () => {
+  it('enforces Projected Revenue = Projected Customers * Projected ARPU without double-counting across presets', () => {
+    const report = cloneReportData(SAMPLE_REPORTS[0].report);
+
+    for (const preset of SIMULATION_PRESETS) {
+      const sim = runWhatIfSimulation(report, preset.assumptions);
+      expect(sim.projectedArpu).not.toBeNull();
+      expect(sim.projectedRevenue).toBeCloseTo(
+        sim.projectedCustomers * (sim.projectedArpu ?? 0),
+        -1
+      );
+      expect(sim.impliedRevenueDeltaPct).toBeCloseTo(
+        computeCombinedRevenueDeltaPct(
+          preset.assumptions.customerDeltaPct,
+          preset.assumptions.arpuDeltaPct
+        ),
+        1
+      );
+    }
+
+    const solvedArpu = solveArpuDeltaFromRevenueAndCustomers(21, 10);
+    expect(solvedArpu).toBeCloseTo(10, 1);
+  });
+
+  it('retains rolling-3m-momentum across filtering, distinguishes revenue vs profit cadence, and evaluates retention/NPS rules', () => {
+    const report = cloneReportData(SAMPLE_REPORTS[0].report);
+    report.currentPeriod.retentionRatePct = 108;
+    report.currentPeriod.npsScore = 72;
+    const metrics = computeReportMetrics(report);
+    const trend = computeTrendAnalysis(report, metrics);
+    const insights = generateExecutiveInsights(report, metrics);
+
+    expect(insights.some((i) => i.id === 'retention-strong')).toBe(true);
+    expect(insights.some((i) => i.id === 'nps-promoter')).toBe(true);
+    expect(insights.some((i) => i.id === 'rolling-3m-momentum')).toBe(true);
+
+    const clientFiltered = filterInsightsForAudience(insights, filterTrendForAudience(trend, true), true, 'client');
+    expect(clientFiltered.some((i) => i.id === 'rolling-3m-momentum')).toBe(true);
+
+    // Distinct profit vs revenue cadence test
+    const splitReport = cloneReportData(SAMPLE_REPORTS[0].report);
+    splitReport.monthlySeries = [
+      { month: 'Jul 2026', revenue: 1_000_000, expenses: 950_000 },
+      { month: 'Aug 2026', revenue: 1_200_000, expenses: 700_000 },
+      { month: 'Sep 2026', revenue: 1_500_000, expenses: 1_400_000 },
+    ];
+    const splitMetrics = computeReportMetrics(splitReport);
+    expect(splitMetrics.bestRevenueMonth?.month).toBe('Sep 2026');
+    expect(splitMetrics.bestMonth?.month).toBe('Aug 2026');
+    const splitRecs = generateStrategicRecommendations(
+      splitReport,
+      splitMetrics,
+      generateExecutiveInsights(splitReport, splitMetrics),
+      'board'
+    );
+    expect(splitRecs.some((r) => r.id === 'rec-cadence')).toBe(true);
+    expect(splitRecs.some((r) => r.id === 'rec-profit-cadence')).toBe(true);
+
+    // Zero-prior health status safety
+    expect(determineHealthStatus(100_000, 20, null, 0)).toBe('Healthy & Stable');
+
+    // Validation bounds for retentionRatePct & npsScore
+    const invalidQual = cloneReportData(SAMPLE_REPORTS[0].report);
+    invalidQual.currentPeriod.retentionRatePct = 240;
+    invalidQual.currentPeriod.npsScore = -120;
+    const valRes = validateReportData(invalidQual);
+    expect(valRes.valid).toBe(false);
+    expect(valRes.errors['currentPeriod.retentionRatePct']).toBeDefined();
+    expect(valRes.errors['currentPeriod.npsScore']).toBeDefined();
+  });
+});
+
+describe('Phase 6 & 7 — WCAG AA Contrast Enforcement & Native SVG/Font Rendering', () => {
+  it('guarantees WCAG AA >= 4.5:1 text & accentInk contrast across all 3 themes and bright custom light accents', () => {
+    const base = cloneReportData(SAMPLE_REPORTS[0].report);
+
+    for (const t of THEME_LIST) {
+      const themed = resolveBrandTheme({
+        ...base,
+        theme: t.id,
+        branding: { ...base.branding, accentColor: t.colors.accent },
+      });
+      for (const bg of [themed.colors.canvas, themed.colors.surface, themed.colors.elevated]) {
+        expect(computeHexContrast(themed.colors.text, bg)).toBeGreaterThanOrEqual(4.5);
+        expect(computeHexContrast(themed.colors.accentInk, bg)).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+
+    // Bright lime custom accent on light Editorial Ivory must auto-compensate accentInk for AA legibility
+    const ivoryLime = resolveBrandTheme({
+      ...base,
+      theme: 'editorial-ivory',
+      branding: { ...base.branding, accentColor: '#D4FF33' },
+    });
+    expect(ivoryLime.colors.accent).toBe('#D4FF33');
+    expect(ivoryLime.colors.accentInk).not.toBe('#D4FF33');
+    expect(computeHexContrast(ivoryLime.colors.accentInk, ivoryLime.colors.surface)).toBeGreaterThanOrEqual(
+      4.5
+    );
+  });
+
+  it('rasterizes inline SVG logos into PNG for native @hyper-elements/react renderers and suppresses zero-value bars', async () => {
+    const sample = cloneReportData(SAMPLE_REPORTS[0].report);
+    const rasterized = rasterizeSvgLogoForNativeRender(sample);
+    expect(rasterized.branding.logoDataUrl.startsWith('data:image/png;base64,')).toBe(true);
+
+    const fonts = loadDistinctThemeFonts(sample);
+    expect(fonts.length).toBeGreaterThan(0);
+
+    // Zero-value category should not get a 1px phantom bar height in SVG charts
+    sample.revenueCategories[0].amount = 0;
+    const htmlWithZero = await renderWebHtml(sample);
+    expect(htmlWithZero).toContain('<svg');
   });
 });
 

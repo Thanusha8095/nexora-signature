@@ -29,6 +29,7 @@ import {
   filterTrendForAudience,
   generateExecutiveInsights,
 } from '../core/intelligence.ts';
+import { sanitizeReportForAudience } from '../core/redaction.ts';
 import { SAMPLE_REPORTS } from '../core/samples.ts';
 import { REPORT_THEMES } from '../core/themes.ts';
 import type {
@@ -87,7 +88,7 @@ export function buildOverviewKpiCards(
         value:
           report.currentPeriod.retentionRatePct !== undefined
             ? `${report.currentPeriod.retentionRatePct.toFixed(1)}% Retention`
-            : metrics.healthStatus,
+            : metrics.clientSafeTrajectory,
         sub:
           report.currentPeriod.npsScore !== undefined
             ? `NPS ${report.currentPeriod.npsScore} · ${report.reportingPeriod}`
@@ -96,13 +97,137 @@ export function buildOverviewKpiCards(
       {
         id: 'edition-governance',
         label: 'Partner Trajectory',
-        value: metrics.healthStatus,
+        value: metrics.clientSafeTrajectory,
         sub: `Internal costs redacted · ${theme.name}`,
         emphasis: true,
       },
     ];
   }
 
+  if (audience.id === 'ceo') {
+    return [
+      {
+        id: 'net-profit',
+        label: 'Net Operating Profit',
+        value: formatCurrency(metrics.netProfit, cur),
+        sub: `${formatPercent(metrics.profitGrowthPct, { signed: true })} vs ${report.previousPeriodLabel}`,
+      },
+      {
+        id: 'period-revenue',
+        label: 'Period Revenue',
+        value: formatCurrency(report.currentPeriod.revenue, cur),
+        sub: `${formatPercent(metrics.revenueGrowthPct, { signed: true })} top-line pace`,
+      },
+      {
+        id: 'operating-ratio',
+        label: 'Operating Expense Ratio',
+        value: `${metrics.operatingExpenseRatioPct.toFixed(1)}%`,
+        sub: `${formatCurrency(report.currentPeriod.expenses, cur, { compact: true })} total OpEx`,
+      },
+      {
+        id: 'profit-margin',
+        label: 'Operating Margin',
+        value: formatPercent(metrics.profitMarginPct),
+        sub: `${metrics.marginDeltaPts >= 0 ? '+' : ''}${metrics.marginDeltaPts.toFixed(1)} pts leverage`,
+      },
+      {
+        id: 'business-health',
+        label: 'Operating Status',
+        value: metrics.healthStatus,
+        sub: `${formatNumber(report.currentPeriod.customerCount)} accounts · ${theme.name}`,
+        emphasis: true,
+      },
+    ];
+  }
+
+  if (audience.id === 'investor') {
+    return [
+      {
+        id: 'profit-margin',
+        label: 'Net Profit Margin',
+        value: formatPercent(metrics.profitMarginPct),
+        sub: `${metrics.marginDeltaPts >= 0 ? '+' : ''}${metrics.marginDeltaPts.toFixed(1)} pts vs prior`,
+      },
+      {
+        id: 'annualized-revenue',
+        label: 'Annualized Run-Rate',
+        value: formatCurrency(metrics.annualizedRevenueEstimate, cur, { compact: true }),
+        sub: `${formatPercent(metrics.revenueGrowthPct, { signed: true })} YoP velocity`,
+      },
+      {
+        id: 'arpu-unit',
+        label: 'ARPU (Rev / Account)',
+        value:
+          metrics.revenuePerCustomer !== null
+            ? formatCurrency(metrics.revenuePerCustomer, cur)
+            : 'N/A',
+        sub: `${formatPercent(metrics.arpuGrowthPct, { signed: true })} unit expansion`,
+      },
+      {
+        id: 'retention-nps',
+        label: 'Retention & Advocacy',
+        value:
+          report.currentPeriod.retentionRatePct !== undefined
+            ? `${report.currentPeriod.retentionRatePct.toFixed(1)}% Retention`
+            : `${formatNumber(report.currentPeriod.customerCount)} Accounts`,
+        sub:
+          report.currentPeriod.npsScore !== undefined
+            ? `NPS ${report.currentPeriod.npsScore} · ${formatPercent(metrics.customerGrowthPct, { signed: true })} acct growth`
+            : `${formatPercent(metrics.customerGrowthPct, { signed: true })} customer growth`,
+      },
+      {
+        id: 'business-health',
+        label: 'Capital Trajectory',
+        value: metrics.healthStatus,
+        sub: `${formatCurrency(metrics.netProfit, cur, { compact: true })} net profit · ${theme.name}`,
+        emphasis: true,
+      },
+    ];
+  }
+
+  if (audience.id === 'team') {
+    const fastestSeg = [...metrics.segmentsComputed].sort((a, b) => b.growthPct - a.growthPct)[0];
+    return [
+      {
+        id: 'active-customers',
+        label: 'Active Customers Served',
+        value: formatNumber(report.currentPeriod.customerCount),
+        sub: `${formatPercent(metrics.customerGrowthPct, { signed: true })} vs ${report.previousPeriodLabel}`,
+      },
+      {
+        id: 'period-revenue',
+        label: 'Team Revenue Delivered',
+        value: formatCurrency(report.currentPeriod.revenue, cur),
+        sub: `${formatPercent(metrics.revenueGrowthPct, { signed: true })} vs prior`,
+      },
+      {
+        id: 'segment-leader',
+        label: 'Leading Growth Segment',
+        value: fastestSeg ? fastestSeg.name : 'Core Operations',
+        sub: fastestSeg
+          ? `${formatPercent(fastestSeg.growthPct, { signed: true })} segment growth`
+          : report.reportingPeriod,
+      },
+      {
+        id: 'net-profit',
+        label: 'Operating Result',
+        value: formatCurrency(metrics.netProfit, cur),
+        sub: `${formatPercent(metrics.profitMarginPct)} margin · ${report.strategicPriorities.length} milestones`,
+      },
+      {
+        id: 'business-health',
+        label: 'Team Trajectory',
+        value: metrics.healthStatus,
+        sub:
+          report.currentPeriod.npsScore !== undefined
+            ? `NPS ${report.currentPeriod.npsScore} · ${theme.name}`
+            : `${report.strategicPriorities.length} active owners`,
+        emphasis: true,
+      },
+    ];
+  }
+
+  // Board Governance Edition
   return [
     {
       id: 'period-revenue',
@@ -167,19 +292,22 @@ export function OverviewView({
   onSelectAudience,
   onOpenPresentation,
 }: OverviewViewProps) {
-  const metrics = computeReportMetrics(report);
-  const theme = REPORT_THEMES[report.theme] ?? REPORT_THEMES['midnight-luxe'];
   const audience = getAudienceEdition(report.audienceEdition);
-  const rawTrend = computeTrendAnalysis(report, metrics);
+  const sanitized = sanitizeReportForAudience(report, audience.id);
+  const activeReport = sanitized.report;
+  const metrics = sanitized.metrics;
+  const theme = REPORT_THEMES[activeReport.theme] ?? REPORT_THEMES['midnight-luxe'];
+  const rawTrend = computeTrendAnalysis(activeReport, metrics);
   const trendAnalysis = filterTrendForAudience(rawTrend, audience.redactInternalExpenses);
-  const rawInsights = generateExecutiveInsights(report, metrics);
+  const rawInsights = generateExecutiveInsights(activeReport, metrics);
   const insights = filterInsightsForAudience(
     rawInsights,
     trendAnalysis,
-    audience.redactInternalExpenses
+    audience.redactInternalExpenses,
+    audience.id
   );
-  const kpiCards = buildOverviewKpiCards(report, metrics, audience, theme);
-  const cur = report.currency;
+  const kpiCards = buildOverviewKpiCards(activeReport, metrics, audience, theme);
+  const cur = activeReport.currency;
 
   const qualityChecks = validation.checks ?? [];
   const passChecks = qualityChecks.filter((c) => c.status === 'pass').length;
@@ -262,7 +390,7 @@ export function OverviewView({
             onClick={onOpenPresentation}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white text-[#0B1120] text-sm font-medium hover:bg-slate-50 transition-colors cursor-pointer whitespace-nowrap"
           >
-            <Presentation className="h-4 w-4 text-[#0891B2]" />
+            <Presentation className="h-4 w-4 text-[#0B6179]" />
             <span>Present Deck</span>
           </button>
           <button
@@ -284,7 +412,7 @@ export function OverviewView({
         >
           <div className="flex items-start justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0891B2]">
+              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0B6179]">
                 <Sparkles className="h-3.5 w-3.5" />
                 <span>Quick-Start Studio Workflow</span>
               </div>
@@ -383,12 +511,12 @@ export function OverviewView({
             ) : null}
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span className="font-semibold text-[#0B1120]">{report.branding.companyName}</span>
+                <span className="font-semibold text-[#0B1120]">{activeReport.branding.companyName}</span>
                 <span aria-hidden="true">&middot;</span>
-                <span>{report.reportingPeriod}</span>
+                <span>{activeReport.reportingPeriod}</span>
                 <span aria-hidden="true">&middot;</span>
-                <span className="text-[#0891B2] font-semibold">{audience.name}</span>
-                {report.isIllustrative ? (
+                <span className="text-[#0B6179] font-semibold">{audience.name}</span>
+                {activeReport.isIllustrative ? (
                   <>
                     <span aria-hidden="true">&middot;</span>
                     <span>Illustrative Sample</span>
@@ -396,7 +524,7 @@ export function OverviewView({
                 ) : null}
               </div>
               <h2 className="font-display text-xl font-semibold text-[#0B1120] truncate mt-0.5">
-                {report.title}
+                {activeReport.title}
               </h2>
             </div>
           </div>
@@ -482,7 +610,7 @@ export function OverviewView({
           <button
             type="button"
             onClick={() => onSelectTab('preview')}
-            className="text-xs font-semibold text-[#0891B2] hover:underline cursor-pointer whitespace-nowrap self-start sm:self-auto"
+            className="text-xs font-semibold text-[#0B6179] hover:underline cursor-pointer whitespace-nowrap self-start sm:self-auto"
           >
             Inspect in 5-Format Report &rarr;
           </button>
@@ -543,7 +671,7 @@ export function OverviewView({
           onClick={() => onSelectTab('simulator')}
           className="text-left p-5 rounded-xl border border-slate-200 bg-white hover:border-[#0B1120] transition-colors cursor-pointer"
         >
-          <Sliders className="h-4 w-4 text-[#0891B2]" />
+          <Sliders className="h-4 w-4 text-[#0B6179]" />
           <div className="text-sm font-semibold text-[#0B1120] mt-3">What-If Simulator</div>
           <p className="text-xs text-slate-600 mt-1 leading-relaxed">
             Model revenue, OpEx, and ARPU sensitivities with explicit non-actual guardrails.
@@ -555,7 +683,7 @@ export function OverviewView({
           onClick={() => onSelectTab('email-lab')}
           className="text-left p-5 rounded-xl border border-slate-200 bg-white hover:border-[#0B1120] transition-colors cursor-pointer"
         >
-          <MailCheck className="h-4 w-4 text-[#0891B2]" />
+          <MailCheck className="h-4 w-4 text-[#0B6179]" />
           <div className="text-sm font-semibold text-[#0B1120] mt-3">Email Compatibility Lab</div>
           <p className="text-xs text-slate-600 mt-1 leading-relaxed">
             Emulate Gmail, Outlook, Apple Mail &amp; mobile plus 102 KB clipping &amp; WCAG audit.
@@ -567,7 +695,7 @@ export function OverviewView({
           onClick={() => onSelectTab('versions')}
           className="text-left p-5 rounded-xl border border-slate-200 bg-white hover:border-[#0B1120] transition-colors cursor-pointer"
         >
-          <GitCompare className="h-4 w-4 text-[#0891B2]" />
+          <GitCompare className="h-4 w-4 text-[#0B6179]" />
           <div className="text-sm font-semibold text-[#0B1120] mt-3">Version Comparison</div>
           <p className="text-xs text-slate-600 mt-1 leading-relaxed">
             Diff your active draft against baseline presets or saved snapshots line by line.

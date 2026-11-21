@@ -13,7 +13,7 @@ import {
 } from '@hyper-elements/react';
 import { getAudienceEdition } from '../../core/audiences.ts';
 import { formatCurrency } from '../../core/calculations.ts';
-import { resolveBrandTheme } from '../../core/themes.ts';
+import { getThemeRadiusPx, resolveBrandTheme } from '../../core/themes.ts';
 import type { ComputedCategoryItem } from '../../core/types.ts';
 import { parsePayload } from './shared.ts';
 
@@ -47,6 +47,8 @@ export const NexoraBreakdownChart = defineElement({
     const audience = getAudienceEdition(report.audienceEdition);
     const c = theme.colors;
     const cur = report.currency;
+    const radius = getThemeRadiusPx(theme, 'md');
+    const barRadius = getThemeRadiusPx(theme, 'sm');
 
     if (target === 'email') {
       const renderEmailTableCard = (
@@ -59,7 +61,7 @@ export const NexoraBreakdownChart = defineElement({
           style={{
             backgroundColor: c.surface,
             border: { width: 1, style: 'solid', color: c.border },
-            borderRadius: 8,
+            borderRadius: radius,
             padding: [14, 16],
             gap: 8,
           }}
@@ -83,12 +85,19 @@ export const NexoraBreakdownChart = defineElement({
               <TableCell style={{ textAlign: 'right', fontWeight: 700 }}>Amount (Share)</TableCell>
             </TableRow>
             {items.map((item) => {
-              const blocks = Math.max(1, Math.min(10, Math.round(item.sharePct / 10)));
+              const blocks =
+                item.sharePct <= 0 ? 0 : Math.max(1, Math.min(10, Math.round(item.sharePct / 10)));
               return (
                 <TableRow key={item.name} style={{ color: c.text }}>
                   <TableCell style={{ fontWeight: 600 }}>{item.name}</TableCell>
-                  <TableCell style={{ fontFamily: theme.typography.monoFont, fontSize: 11, color: barColor }}>
-                    {'█'.repeat(blocks)}
+                  <TableCell
+                    style={{
+                      fontFamily: theme.typography.monoFont,
+                      fontSize: 11,
+                      color: blocks > 0 ? barColor : c.textMuted,
+                    }}
+                  >
+                    {blocks > 0 ? '█'.repeat(blocks) : '—'}
                   </TableCell>
                   <TableCell
                     style={{
@@ -109,7 +118,7 @@ export const NexoraBreakdownChart = defineElement({
       if (audience.redactInternalExpenses) {
         return renderEmailTableCard(
           'Revenue Streams & Product Adoption',
-          `Category total: ${formatCurrency(metrics.revenueCategoryTotal, cur, { compact: true })} (Internal cost drivers redacted in Client Edition)`,
+          `Category total: ${formatCurrency(metrics.revenueCategoryTotal, cur, { compact: true })} (Partner-facing solution mix)`,
           metrics.revenueCategoriesComputed,
           c.chartRevenue
         );
@@ -143,7 +152,7 @@ export const NexoraBreakdownChart = defineElement({
         style={{
           backgroundColor: c.surface,
           border: { width: 1, style: 'solid', color: c.border },
-          borderRadius: 8,
+          borderRadius: radius,
           padding: [20, 22],
           gap: 12,
         }}
@@ -173,7 +182,8 @@ export const NexoraBreakdownChart = defineElement({
 
         <Column style={{ gap: 11 }}>
           {items.map((item) => {
-            const pct = Math.max(2, Math.min(100, Math.round(item.sharePct)));
+            const pct =
+              item.sharePct <= 0 ? 0 : Math.max(2, Math.min(100, Math.round(item.sharePct)));
             return (
               <Column key={item.name} style={{ gap: 5 }}>
                 <Row stackOnMobile={false} style={{ gap: 8, alignItems: 'center' }}>
@@ -210,17 +220,19 @@ export const NexoraBreakdownChart = defineElement({
                   stackOnMobile={false}
                   style={{
                     backgroundColor: c.elevated,
-                    borderRadius: 4,
+                    borderRadius: barRadius,
                     overflow: 'hidden',
                   }}
                 >
-                  <Column
-                    style={{
-                      flex: pct,
-                      height: 8,
-                      backgroundColor: barColor,
-                    }}
-                  />
+                  {pct > 0 ? (
+                    <Column
+                      style={{
+                        flex: pct,
+                        height: 8,
+                        backgroundColor: barColor,
+                      }}
+                    />
+                  ) : null}
                   {pct < 100 ? (
                     <Column style={{ flex: 100 - pct, height: 8 }} />
                   ) : null}
@@ -235,7 +247,7 @@ export const NexoraBreakdownChart = defineElement({
     if (audience.redactInternalExpenses) {
       return renderBreakdownCard(
         'Revenue Streams & Product Adoption',
-        `Category total: ${formatCurrency(metrics.revenueCategoryTotal, cur)} (Internal cost drivers redacted in Client Edition)`,
+        `Category total: ${formatCurrency(metrics.revenueCategoryTotal, cur)} (Partner-facing solution mix)`,
         metrics.revenueCategoriesComputed,
         c.chartRevenue
       );

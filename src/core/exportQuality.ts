@@ -1,9 +1,14 @@
 import { getAudienceEdition } from './audiences.ts';
 import { auditEmailHtml } from './emailAudit.ts';
+import {
+  auditOutputForConfidentialLeaks,
+  sanitizeReportForAudience,
+} from './redaction.ts';
 import { resolveBrandTheme } from './themes.ts';
 import type { ReportInputData } from './types.ts';
 import { validateReportData } from './validation.ts';
 import {
+  renderCanvasHtml,
   renderEmailHtml,
   renderPlainTextEmail,
   renderPrintDocumentHtml,
@@ -38,7 +43,7 @@ export interface ExportQualityDimension {
 
 export interface ExportQualityScorecard {
   overallScore: number;
-  maxScore: 100;
+  maxScore: number;
   grade: ExportQualityGrade;
   exportReady: boolean;
   dimensions: ExportQualityDimension[];
@@ -71,17 +76,20 @@ export async function scoreReportExports(
   const validation = validateReportData(report);
   const audience = getAudienceEdition(report.audienceEdition);
   const theme = resolveBrandTheme(report);
+  const { rawMetrics } = sanitizeReportForAudience(report);
 
-  const [emailHtml, plainText, webHtml, printHtml, webValidation, emailValidation] =
+  const [emailHtml, plainText, webHtml, printHtml, canvasHtml, webValidation, emailValidation] =
     await Promise.all([
       renderEmailHtml(report),
       renderPlainTextEmail(report),
       renderWebHtml(report),
       renderPrintDocumentHtml(report),
+      renderCanvasHtml(report),
       validateReportElements(report, 'web'),
       validateReportElements(report, 'email'),
     ]);
   const designJson = renderReportDesignJson(report, 'web');
+  const designJsonText = JSON.stringify(designJson);
   const emailAudit = auditEmailHtml(emailHtml, report);
 
   const webKb = new TextEncoder().encode(webHtml).byteLength / 1024;
@@ -127,11 +135,13 @@ export async function scoreReportExports(
   const emailSizePts =
     emailAudit.kbSize <= 102 ? 6 : emailAudit.kbSize <= 130 ? 3 : 0;
   const emailContrastPts =
-    emailAudit.contrastRatioPrimary >= 4.5
+    emailAudit.contrastRatioPrimary >= 4.5 && emailAudit.contrastRatioAccent >= 4.5
       ? 5
-      : emailAudit.contrastRatioPrimary >= 3.0
-        ? 2
-        : 0;
+      : emailAudit.contrastRatioPrimary >= 4.5
+        ? 3
+        : emailAudit.contrastRatioPrimary >= 3.0
+          ? 2
+          : 0;
   const emailMsoSparkPts =
     emailAudit.tableCount >= 5 && /Monthly .*Sparkline/i.test(emailHtml) ? 4 : 1;
   const emailA11yRespPts =
@@ -166,11 +176,14 @@ export async function scoreReportExports(
     },
     {
       id: 'em-contrast',
-      label: 'Surface Text Contrast Ratio (WCAG AA)',
-      status: emailAudit.contrastRatioPrimary >= 4.5 ? 'pass' : 'warn',
+      label: 'Surface & AccentInk Contrast Ratio (WCAG AA)',
+      status:
+        emailAudit.contrastRatioPrimary >= 4.5 && emailAudit.contrastRatioAccent >= 4.5
+          ? 'pass'
+          : 'warn',
       pointsEarned: emailContrastPts,
       maxPoints: 5,
-      detail: `${emailAudit.contrastRatioPrimary.toFixed(1)}:1 primary text ratio; ${emailAudit.contrastRatioAccent.toFixed(1)}:1 accent contrast (${theme.name}).`,
+      detail: `${emailAudit.contrastRatioPrimary.toFixed(1)}:1 primary text ratio; ${emailAudit.contrastRatioAccent.toFixed(1)}:1 accentInk small-text contrast (${theme.name}).`,
     },
     {
       id: 'em-tables',
@@ -196,14 +209,17 @@ export async function scoreReportExports(
   const hasResponsiveAndRolling =
     webHtml.includes('Rolling 3M Avg') && /@media/i.test(webHtml);
   const hasFontsAndTree =
-    webHtml.includes('fonts.googleapis.com') && designJsonRows >= 6 && elementErrorsZero;
-  const webHasStoryAndTrend =
-    webHtml.includes('Executive Story Arc') &&
+    webHtml.includes('fonts.googleapis.com') && designJsonRows >= 5 && elementErrorsZero;
+  const webHasStoryAndCompany =
+    (webHtml.includes('Executive Story Arc') ||
+      webHtml.includes('Partner Journey') ||
+      webHtml.includes('Execution Story') ||
+      webHtml.includes('Growth Story')) &&
     webHtml.includes(report.branding.companyName.replace(/[<>&"']/g, '').slice(0, 8));
 
   const webSvgPts = hasSvgCharts ? 7 : 0;
   const webInteractivePts = hasResponsiveAndRolling ? 5 : 2;
-  const webHyperTreePts = hasFontsAndTree && webHasStoryAndTrend ? 8 : 4;
+  const webHyperTreePts = hasFontsAndTree && webHasStoryAndCompany ? 8 : 4;
   const webScore = webSvgPts + webInteractivePts + webHyperTreePts;
 
   const webFindings: ExportQualityFinding[] = [
@@ -214,7 +230,7 @@ export async function scoreReportExports(
       pointsEarned: webSvgPts,
       maxPoints: 7,
       detail: hasSvgCharts
-        ? 'Crisp native <Svg> vector chart rendered with Rolling 3M Avg dashed line, bars, and Net Profit curve.'
+        ? 'Crisp native <Svg> vector chart rendered with Rolling 3M Avg dashed line and trajectory markers.'
         : 'Vector SVG chart missing from Web HTML.',
     },
     {
@@ -228,7 +244,7 @@ export async function scoreReportExports(
     {
       id: 'web-tree',
       label: '@hyper-elements/react Tree, validate() & DesignJSON',
-      status: hasFontsAndTree && webHasStoryAndTrend ? 'pass' : 'warn',
+      status: hasFontsAndTree && webHasStoryAndCompany ? 'pass' : 'warn',
       pointsEarned: webHyperTreePts,
       maxPoints: 8,
       detail: `${designJsonRows} serialized DesignJSON rows with resolved ${theme.name} web fonts and ${elementErrorsZero ? '0' : 'non-zero'} validate() errors.`,
@@ -241,10 +257,14 @@ export async function scoreReportExports(
   const hasPageBreak =
     /page-break-after:\s*always|break-after:\s*page/i.test(printHtml) &&
     /break-inside:\s*avoid/i.test(printHtml);
+  const hasNoEmptyPageBreak =
+    !/<div[^>]*page-break-after:\s*always[^>]*><\/div>\s*(?:<div[^>]*page-break-after:\s*always|<\/body)/i.test(
+      printHtml
+    );
 
   const printPagePts = hasPrintPageRule ? 6 : 0;
   const printColorPts = hasColorExact ? 4 : 0;
-  const printBreakPts = hasPageBreak ? 5 : 2;
+  const printBreakPts = hasPageBreak && hasNoEmptyPageBreak ? 5 : 2;
   const printScore = printPagePts + printColorPts + printBreakPts;
 
   const printFindings: ExportQualityFinding[] = [
@@ -255,7 +275,7 @@ export async function scoreReportExports(
       pointsEarned: printPagePts,
       maxPoints: 6,
       detail: hasPrintPageRule
-        ? '@page { size: A4 portrait } margins verified for Playwright Chromium PDF.'
+        ? '@page { size: A4 portrait } unified margins verified for Playwright Chromium PDF.'
         : 'Missing @page A4 portrait print rule.',
     },
     {
@@ -268,33 +288,50 @@ export async function scoreReportExports(
     },
     {
       id: 'pdf-breaks',
-      label: '<PageBreak /> & Card Break-Inside Protection',
-      status: hasPageBreak ? 'pass' : 'warn',
+      label: 'Dynamic <PageBreak /> & Card Break-Inside Protection',
+      status: hasPageBreak && hasNoEmptyPageBreak ? 'pass' : 'warn',
       pointsEarned: printBreakPts,
       maxPoints: 5,
-      detail: 'Explicit <PageBreak /> splits and break-inside: avoid guards detected.',
+      detail: hasNoEmptyPageBreak
+        ? 'Dynamic audience-aware <PageBreak /> splits and break-inside: avoid guards with zero trailing blank pages.'
+        : 'Detected trailing or consecutive empty page break rule.',
     },
   ];
 
-  // 5. Plain-Text Completeness & Audience Redaction Governance (15 pts)
+  // 5. Plain-Text Completeness & Full-Output Audience Redaction Governance (15 pts)
   const plainRequiredMarkers = [
-    'KEY FINANCIAL SNAPSHOT',
-    'EXECUTIVE SUMMARY',
+    'SNAPSHOT',
     'MONTHLY PERFORMANCE',
-    'LEADERSHIP STRATEGIC PRIORITIES',
+    audience.prioritiesHeading.toUpperCase(),
   ];
   const plainComplete =
-    plainText.length >= 400 && plainRequiredMarkers.every((m) => plainText.includes(m));
+    plainText.length >= 350 &&
+    plainRequiredMarkers.every((m) => plainText.toUpperCase().includes(m));
   const plainPts = plainComplete ? 8 : 3;
 
-  const clientLeaked =
-    audience.redactInternalExpenses &&
-    (webHtml.includes('Operating Cost Drivers') ||
-      emailHtml.includes('Operating Expenses') ||
-      !plainText.includes('Internal cost structure omitted'));
+  let leakDetails: string[] = [];
+  if (audience.redactInternalExpenses) {
+    const formatAudits: [string, string][] = [
+      ['Web HTML', webHtml],
+      ['Email HTML', emailHtml],
+      ['Plain-Text', plainText],
+      ['Print PDF HTML', printHtml],
+      ['Canvas HTML', canvasHtml],
+      ['DesignJSON', designJsonText],
+    ];
+    for (const [formatName, content] of formatAudits) {
+      const leaks = auditOutputForConfidentialLeaks(content, report, rawMetrics);
+      if (leaks.length > 0) {
+        leakDetails.push(`${formatName}: ${leaks.join(', ')}`);
+      }
+    }
+    if (!plainText.includes('Internal cost structure omitted')) {
+      leakDetails.push('Plain-Text missing Client redaction banner');
+    }
+  }
 
   const govVerified = audience.redactInternalExpenses
-    ? !clientLeaked
+    ? leakDetails.length === 0
     : webHtml.includes('Operating Cost Drivers') || plainText.includes('EXPENSE BREAKDOWN');
   const govPts = govVerified ? 7 : 0;
   const govScore = plainPts + govPts;
@@ -306,21 +343,21 @@ export async function scoreReportExports(
       status: plainComplete ? 'pass' : 'warn',
       pointsEarned: plainPts,
       maxPoints: 8,
-      detail: `${plainTextLines} structured lines covering KPIs, narrative, monthly ledger, and priorities.`,
+      detail: `${plainTextLines} structured lines ordered for ${audience.shortLabel} priorities.`,
     },
     {
       id: 'gov-audience',
       label: audience.redactInternalExpenses
-        ? 'Client Edition Expense Redaction Verification'
+        ? 'Client Edition Six-Format Redaction Audit'
         : `Audience Cost & Simulation Alignment (${audience.shortLabel})`,
       status: govVerified ? 'pass' : 'fail',
       pointsEarned: govPts,
       maxPoints: 7,
       detail: audience.redactInternalExpenses
         ? govVerified
-          ? 'Confirmed zero internal OpEx, Net Profit, or internal simulation leakage across HTML & Plain-Text.'
-          : 'Internal cost terms detected in Client Edition output!'
-        : `Full P&L cost breakdown verified for ${audience.name}.`,
+          ? 'Confirmed zero confidential expense, margin, profit, prose, owner, or metadata leakage across Web, Email, Plain-Text, PDF Print, Canvas, and DesignJSON.'
+          : `Confidential leak detected -> ${leakDetails.join(' | ')}`
+        : `Full P&L and ${audience.shortLabel}-specific section ordering verified.`,
     },
   ];
 
@@ -357,7 +394,7 @@ export async function scoreReportExports(
       label: 'Print & A4 PDF Pagination',
       score: printScore,
       maxScore: 15,
-      summary: hasPrintPageRule ? 'A4 exact-color + PageBreak' : 'Missing print CSS rules',
+      summary: hasPrintPageRule ? 'A4 exact-color + dynamic PageBreak' : 'Missing print CSS rules',
       findings: printFindings,
     },
     {

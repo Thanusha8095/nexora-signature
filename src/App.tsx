@@ -14,7 +14,7 @@ import { type StudioTabId, TopBar } from './components/TopBar.tsx';
 import { VersionCompareView } from './components/VersionCompareView.tsx';
 import { getAudienceEdition } from './core/audiences.ts';
 import { cloneReportData, SAMPLE_REPORTS } from './core/samples.ts';
-import { REPORT_THEMES } from './core/themes.ts';
+import { applyThemePresetToReport, REPORT_THEMES } from './core/themes.ts';
 import type { AudienceEditionId, ReportInputData, ReportThemeId } from './core/types.ts';
 import { validateReportData } from './core/validation.ts';
 import { useAutoSaveReport } from './hooks/useAutoSaveReport.ts';
@@ -65,16 +65,7 @@ export default function App() {
 
   const handleSelectTheme = (themeId: ReportThemeId) => {
     const t = REPORT_THEMES[themeId];
-    setReport((prev) => ({
-      ...prev,
-      theme: themeId,
-      branding: {
-        ...prev.branding,
-        primaryColor: t.colors.canvas,
-        accentColor: t.colors.accent,
-      },
-      updatedAt: new Date().toISOString(),
-    }));
+    setReport((prev) => applyThemePresetToReport(prev, themeId));
     notify('success', `Applied ${t.name} design system`, t.subtitle);
   };
 

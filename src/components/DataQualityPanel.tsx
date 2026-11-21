@@ -145,7 +145,7 @@ export function DataQualityPanel({
                 <button
                   type="button"
                   onClick={() => onJumpToSection(chk.sectionHint!)}
-                  className="text-[11px] font-semibold text-[#0891B2] hover:underline shrink-0 cursor-pointer"
+                  className="text-[11px] font-semibold text-[#0B6179] hover:underline shrink-0 cursor-pointer"
                 >
                   Inspect
                 </button>

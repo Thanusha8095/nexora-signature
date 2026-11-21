@@ -74,7 +74,7 @@ export function EmailLabView({ report, onSelectAudience, onGoToExport }: EmailLa
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-5 border-b border-slate-200">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-[#0891B2]">
+          <div className="text-xs font-semibold uppercase tracking-wider text-[#0B6179]">
             @hyper-elements/react &lt;Email&gt; Output Verification
           </div>
           <h1 className="font-display text-2xl lg:text-3xl font-semibold text-[#0B1120] mt-1">

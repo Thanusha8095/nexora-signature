@@ -2,7 +2,12 @@ import { type ChangeEvent, useRef } from 'react';
 import { RotateCcw, Trash2, Upload } from 'lucide-react';
 import { getAudienceEdition } from '../core/audiences.ts';
 import { validateSafeImageDataUrl } from '../core/security.ts';
-import { BRAND_FONT_PRESETS, REPORT_THEMES, resolveBrandTheme } from '../core/themes.ts';
+import {
+  BRAND_FONT_PRESETS,
+  computeHexContrast,
+  REPORT_THEMES,
+  resolveBrandTheme,
+} from '../core/themes.ts';
 import type {
   BrandFontPreset,
   CoverStyleOverride,
@@ -78,7 +83,7 @@ export function BrandingView({ report, validation, onChange, onNotify }: Brandin
   return (
     <div className="space-y-6">
       <div className="pb-5 border-b border-slate-200">
-        <div className="text-xs font-semibold uppercase tracking-wider text-[#0891B2]">
+        <div className="text-xs font-semibold uppercase tracking-wider text-[#0B6179]">
           Cross-Format Identity System
         </div>
         <h1 className="font-display text-2xl lg:text-3xl font-semibold text-[#0B1120] mt-1">
@@ -122,7 +127,7 @@ export function BrandingView({ report, validation, onChange, onNotify }: Brandin
               <div
                 className="text-xs font-bold uppercase tracking-widest"
                 style={{
-                  color: resolvedTheme.colors.accent,
+                  color: resolvedTheme.colors.accentInk,
                   fontFamily: resolvedTheme.typography.bodyFont,
                 }}
               >
@@ -153,9 +158,21 @@ export function BrandingView({ report, validation, onChange, onNotify }: Brandin
             <div className="text-[11px]" style={{ color: resolvedTheme.colors.textMuted }}>
               LIVE BRAND SPECIMEN
             </div>
-            <div className="text-lg font-bold mt-0.5" style={{ color: resolvedTheme.colors.accent }}>
-              {resolvedTheme.colors.accent}
+            <div className="mt-0.5 flex items-center justify-end gap-2">
+              <span
+                className="inline-block h-3 w-3 rounded-xs border border-black/20"
+                style={{ backgroundColor: resolvedTheme.colors.accent }}
+              />
+              <span className="text-lg font-bold" style={{ color: resolvedTheme.colors.accentInk }}>
+                {resolvedTheme.colors.accent}
+              </span>
             </div>
+            {resolvedTheme.colors.accentInk.toLowerCase() !==
+            resolvedTheme.colors.accent.toLowerCase() ? (
+              <div className="text-[10px]" style={{ color: resolvedTheme.colors.textMuted }}>
+                AA Text Ink: {resolvedTheme.colors.accentInk}
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
@@ -241,9 +258,10 @@ export function BrandingView({ report, validation, onChange, onNotify }: Brandin
               {b.logoDataUrl.trim().startsWith('data:image/') ? (
                 <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mt-2 leading-relaxed">
                   Embedded <code className="font-mono-num">data:image/*</code> logo active. Gmail
-                  strips inline data URIs and <code className="font-mono-num">renderPdf()</code>{' '}
-                  skips SVG data URIs — paste a hosted HTTPS PNG/JPEG URL above for email
-                  campaigns.
+                  strips inline data URIs — paste a hosted HTTPS PNG/JPEG URL above for email
+                  campaigns (Web, Playwright PDF, native <code className="font-mono-num">renderPdf()</code>,
+                  and <code className="font-mono-num">&lt;Canvas&gt;</code> PNG support embedded SVG
+                  &amp; raster marks automatically).
                 </p>
               ) : null}
             </div>
@@ -337,7 +355,7 @@ export function BrandingView({ report, validation, onChange, onNotify }: Brandin
                     coverStyle: 'theme-default',
                   })
                 }
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-[#0891B2] hover:underline cursor-pointer"
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-[#0B6179] hover:underline cursor-pointer"
               >
                 <RotateCcw className="h-3 w-3" />
                 <span>Reset DNA to {activeTheme.name}</span>
@@ -386,6 +404,37 @@ export function BrandingView({ report, validation, onChange, onNotify }: Brandin
                 </div>
               </div>
             </div>
+
+            {(() => {
+              const rawAccentContrast = computeHexContrast(
+                resolvedTheme.colors.accent,
+                resolvedTheme.colors.surface
+              );
+              const inkContrast = computeHexContrast(
+                resolvedTheme.colors.accentInk,
+                resolvedTheme.colors.surface
+              );
+              return (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600 space-y-1">
+                  <div className="flex items-center justify-between font-mono-num">
+                    <span>Accent vs Surface Contrast</span>
+                    <span
+                      className={`font-semibold ${
+                        inkContrast >= 4.5 ? 'text-emerald-700' : 'text-amber-700'
+                      }`}
+                    >
+                      {inkContrast.toFixed(1)}:1 (WCAG AA &ge; 4.5:1)
+                    </span>
+                  </div>
+                  {rawAccentContrast < 4.5 ? (
+                    <p className="text-[11px] text-slate-600 leading-snug">
+                      Raw accent ({rawAccentContrast.toFixed(1)}:1) is preserved on borders and fills; small accent labels auto-tune to{' '}
+                      <code className="font-mono-num font-semibold">{resolvedTheme.colors.accentInk}</code> ({inkContrast.toFixed(1)}:1).
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })()}
           </div>
         </div>
 

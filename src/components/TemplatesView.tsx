@@ -101,7 +101,7 @@ export function TemplatesView({
             onClick={onOpenPresentation}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 bg-white text-[#0B1120] text-xs font-semibold hover:bg-slate-50 cursor-pointer whitespace-nowrap"
           >
-            <Presentation className="h-3.5 w-3.5 text-[#0891B2]" />
+            <Presentation className="h-3.5 w-3.5 text-[#0B6179]" />
             <span>Presentation Mode</span>
           </button>
           <button
@@ -118,7 +118,7 @@ export function TemplatesView({
       {/* Recommended Theme x Audience Pairings */}
       <section>
         <div className="flex items-center gap-2 mb-1">
-          <Sparkles className="h-4 w-4 text-[#0891B2]" />
+          <Sparkles className="h-4 w-4 text-[#0B6179]" />
           <h2 className="font-display text-xl font-semibold text-[#0B1120]">
             Curated Executive Combinations
           </h2>
@@ -140,7 +140,7 @@ export function TemplatesView({
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 font-mono-num text-[11px]">
-                    <span className="font-semibold text-[#0891B2]">{t.name}</span>
+                    <span className="font-semibold text-[#0B6179]">{t.name}</span>
                     <span className="text-slate-500 uppercase">{pair.audienceId}</span>
                   </div>
                   <h3 className="text-sm font-semibold text-[#0B1120] mt-1.5">{pair.title}</h3>
@@ -188,7 +188,7 @@ export function TemplatesView({
               >
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[#0891B2]">{ed.shortLabel}</span>
+                    <span className="text-xs font-semibold text-[#0B6179]">{ed.shortLabel}</span>
                     {active ? <Check className="h-4 w-4 text-emerald-600 shrink-0" /> : null}
                   </div>
                   <h3 className="text-sm font-semibold text-[#0B1120] mt-1">{ed.name}</h3>
@@ -240,6 +240,14 @@ export function TemplatesView({
                 }`}
               >
                 <div>
+                  {theme.layoutStyle === 'swiss-precision' ? (
+                    <div
+                      className="h-1.5"
+                      style={{
+                        background: `linear-gradient(90deg, #0B1120 0%, ${theme.colors.accent} 65%, ${theme.colors.secondary} 100%)`,
+                      }}
+                    />
+                  ) : null}
                   <div
                     className="p-5 border-b"
                     style={{
@@ -251,7 +259,7 @@ export function TemplatesView({
                     <div className="flex items-center justify-between text-[11px]">
                       <span
                         className="font-semibold uppercase tracking-wider"
-                        style={{ color: theme.colors.accent }}
+                        style={{ color: theme.colors.accentInk }}
                       >
                         {theme.layoutStyle === 'editorial-broadsheet'
                           ? 'Broadsheet'
@@ -271,7 +279,7 @@ export function TemplatesView({
                     </div>
                     <div
                       className="font-mono-num text-xl font-bold mt-2"
-                      style={{ color: theme.colors.accent }}
+                      style={{ color: theme.colors.accentInk }}
                     >
                       {formatCurrency(report.currentPeriod.revenue, report.currency)}
                     </div>
@@ -361,7 +369,7 @@ export function TemplatesView({
                         className="h-10 w-10 rounded-lg border border-slate-200 shrink-0"
                       />
                       <div className="min-w-0">
-                        <div className="text-xs font-semibold text-[#0891B2]">
+                        <div className="text-xs font-semibold text-[#0B6179]">
                           {sample.industry}
                         </div>
                         <h3 className="text-sm font-semibold text-[#0B1120] truncate">
