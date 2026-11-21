@@ -6,6 +6,94 @@ import type {
   ThemeSpec,
 } from './types.ts';
 
+function parseHexRgb(hex: string): [number, number, number] | null {
+  const clean = hex.trim().replace(/^#/, '');
+  if (clean.length === 3) {
+    return [
+      parseInt(clean[0] + clean[0], 16),
+      parseInt(clean[1] + clean[1], 16),
+      parseInt(clean[2] + clean[2], 16),
+    ];
+  }
+  if (clean.length === 6) {
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return null;
+    return [r, g, b];
+  }
+  return null;
+}
+
+function rgbToHex([r, g, b]: [number, number, number]): string {
+  const toHex = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+}
+
+function relativeLum([r, g, b]: [number, number, number]): number {
+  const ch = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
+}
+
+export function computeHexContrast(hexA: string, hexB: string): number {
+  const rgbA = parseHexRgb(hexA);
+  const rgbB = parseHexRgb(hexB);
+  if (!rgbA || !rgbB) return 1;
+  const l1 = relativeLum(rgbA);
+  const l2 = relativeLum(rgbB);
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
+/**
+ * Adjusts a custom accent color when rendered as small text against canvas/surface/elevated
+ * so it achieves at least targetRatio (default 4.5:1 WCAG AA).
+ */
+export function ensureAccessibleAccentInk(
+  accentHex: string,
+  backgrounds: string[],
+  fallbackInk: string,
+  targetRatio = 4.5
+): string {
+  const rgb = parseHexRgb(accentHex);
+  if (!rgb) return fallbackInk;
+
+  const minRatio = (candidate: string) =>
+    Math.min(...backgrounds.map((bg) => computeHexContrast(candidate, bg)));
+
+  if (minRatio(accentHex) >= targetRatio) {
+    return accentHex.toUpperCase();
+  }
+
+  // Determine whether backgrounds are predominantly dark or light
+  const avgBgLum =
+    backgrounds.reduce((sum, bg) => {
+      const bgRgb = parseHexRgb(bg);
+      return sum + (bgRgb ? relativeLum(bgRgb) : 0.5);
+    }, 0) / Math.max(1, backgrounds.length);
+
+  const isDarkBg = avgBgLum < 0.25;
+  const targetRgb: [number, number, number] = isDarkBg ? [255, 255, 255] : [11, 17, 32];
+
+  // Binary / stepped mix toward light or dark until >= targetRatio
+  for (let step = 5; step <= 100; step += 5) {
+    const t = step / 100;
+    const mixed: [number, number, number] = [
+      rgb[0] + (targetRgb[0] - rgb[0]) * t,
+      rgb[1] + (targetRgb[1] - rgb[1]) * t,
+      rgb[2] + (targetRgb[2] - rgb[2]) * t,
+    ];
+    const hex = rgbToHex(mixed);
+    if (minRatio(hex) >= targetRatio) {
+      return hex;
+    }
+  }
+
+  return fallbackInk;
+}
+
 export const REPORT_THEMES: Record<ReportThemeId, ThemeSpec> = {
   'midnight-luxe': {
     id: 'midnight-luxe',
@@ -21,8 +109,9 @@ export const REPORT_THEMES: Record<ReportThemeId, ThemeSpec> = {
       text: '#F8F6F0',
       textMuted: '#94A3B8',
       accent: '#D4FF33',
+      accentInk: '#D4FF33',
       accentText: '#0B1120',
-      secondary: '#0891B2',
+      secondary: '#38BDF8',
       border: '#23304C',
       tableHeaderBg: '#17223B',
       tableHeaderText: '#D4FF33',
@@ -59,6 +148,7 @@ export const REPORT_THEMES: Record<ReportThemeId, ThemeSpec> = {
       text: '#141413',
       textMuted: '#57534E',
       accent: '#9A7B2C',
+      accentInk: '#735814',
       accentText: '#FFFFFF',
       secondary: '#141413',
       border: '#DED7C8',
@@ -73,7 +163,7 @@ export const REPORT_THEMES: Record<ReportThemeId, ThemeSpec> = {
       criticalBg: '#FEE2E2',
       chartRevenue: '#141413',
       chartExpense: '#9A7B2C',
-      chartProfit: '#0891B2',
+      chartProfit: '#0B6179',
     },
     typography: {
       headingFont: "'Playfair Display', Georgia, serif",
@@ -97,15 +187,16 @@ export const REPORT_THEMES: Record<ReportThemeId, ThemeSpec> = {
       text: '#0F172A',
       textMuted: '#475569',
       accent: '#0891B2',
+      accentInk: '#0B6179',
       accentText: '#FFFFFF',
       secondary: '#5B21B6',
       border: '#E2E8F0',
       tableHeaderBg: '#0B1120',
       tableHeaderText: '#FFFFFF',
       tableStripeBg: '#F8FAFC',
-      positive: '#0F766E',
+      positive: '#0F6B64',
       positiveBg: '#F0FDFA',
-      warning: '#B45309',
+      warning: '#9A4407',
       warningBg: '#FFFBEB',
       critical: '#BE123C',
       criticalBg: '#FFF1F2',
@@ -178,11 +269,47 @@ export const THEME_LIST: ThemeSpec[] = [
   REPORT_THEMES['modern-signal'],
 ];
 
+export function applyThemePresetToReport(
+  report: ReportInputData,
+  themeId: ReportThemeId
+): ReportInputData {
+  const t = REPORT_THEMES[themeId] ?? REPORT_THEMES['midnight-luxe'];
+  return {
+    ...report,
+    theme: themeId,
+    branding: {
+      ...report.branding,
+      primaryColor: t.colors.canvas,
+      accentColor: t.colors.accent,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function getThemeRadiusPx(theme: ThemeSpec, size: 'sm' | 'md' | 'lg' = 'md'): number {
+  if (theme.layoutStyle === 'editorial-broadsheet') {
+    return size === 'sm' ? 2 : 2;
+  }
+  if (theme.layoutStyle === 'swiss-precision') {
+    return size === 'sm' ? 4 : size === 'lg' ? 8 : 6;
+  }
+  return size === 'sm' ? 4 : size === 'lg' ? 10 : 8;
+}
+
 export function resolveBrandTheme(report: ReportInputData): ThemeSpec {
   const base = REPORT_THEMES[report.theme] ?? REPORT_THEMES['midnight-luxe'];
   const fontPreset = report.branding.fontPreset;
   const coverOverride = report.branding.coverStyle;
   const safeAccent = sanitizeCssColor(report.branding.accentColor, base.colors.accent);
+  const resolvedAccentInk =
+    safeAccent.toLowerCase() === base.colors.accent.toLowerCase()
+      ? base.colors.accentInk
+      : ensureAccessibleAccentInk(
+          safeAccent,
+          [base.colors.canvas, base.colors.surface, base.colors.elevated],
+          base.colors.accentInk,
+          4.5
+        );
 
   const fontMeta =
     fontPreset && fontPreset !== 'theme-default' ? BRAND_FONT_PRESETS[fontPreset] : null;
@@ -194,6 +321,7 @@ export function resolveBrandTheme(report: ReportInputData): ThemeSpec {
     colors: {
       ...base.colors,
       accent: safeAccent,
+      accentInk: resolvedAccentInk,
     },
     typography: fontMeta
       ? {

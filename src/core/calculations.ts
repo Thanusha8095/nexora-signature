@@ -1,5 +1,6 @@
 import type {
   BusinessHealthStatus,
+  ClientTrajectoryStatus,
   ComputedCategoryItem,
   ComputedMetrics,
   ComputedMonthlyPoint,
@@ -99,7 +100,8 @@ export function determineHealthStatus(
     return 'Contraction Watch';
   }
   if (
-    (revenueGrowthPct === null || revenueGrowthPct >= 8) &&
+    revenueGrowthPct !== null &&
+    revenueGrowthPct >= 8 &&
     profitMarginPct >= 15 &&
     marginDeltaPts >= -1.5
   ) {
@@ -109,6 +111,33 @@ export function determineHealthStatus(
     return 'Margin Pressure';
   }
   return 'Healthy & Stable';
+}
+
+export function determineClientSafeTrajectory(
+  revenueGrowthPct: number | null,
+  customerGrowthPct: number | null,
+  retentionRatePct?: number,
+  npsScore?: number
+): ClientTrajectoryStatus {
+  if (
+    (revenueGrowthPct !== null && revenueGrowthPct < -5) ||
+    (retentionRatePct !== undefined && retentionRatePct < 75)
+  ) {
+    return 'Retention Focus';
+  }
+  if (
+    revenueGrowthPct !== null &&
+    revenueGrowthPct >= 10 &&
+    (customerGrowthPct === null || customerGrowthPct >= 5) &&
+    (retentionRatePct === undefined || retentionRatePct >= 80) &&
+    (npsScore === undefined || npsScore >= 40)
+  ) {
+    return 'Strong Partner Momentum';
+  }
+  if (revenueGrowthPct !== null && revenueGrowthPct < 0) {
+    return 'Scale Moderation';
+  }
+  return 'Steady Expansion';
 }
 
 export function computeReportMetrics(report: ReportInputData): ComputedMetrics {
@@ -158,6 +187,10 @@ export function computeReportMetrics(report: ReportInputData): ComputedMetrics {
       marginPct: margin,
     };
   });
+
+  const monthsInPeriod =
+    monthlyWithProfit.length >= 1 && monthlyWithProfit.length <= 12 ? monthlyWithProfit.length : 3;
+  const annualizedRevenueEstimate = currRev * (12 / monthsInPeriod);
 
   const revenueCategoryTotal = report.revenueCategories.reduce(
     (sum, item) => sum + (Number.isFinite(item.amount) ? item.amount : 0),
@@ -209,9 +242,14 @@ export function computeReportMetrics(report: ReportInputData): ComputedMetrics {
 
   let bestMonth: ComputedMonthlyPoint | null = null;
   let worstMonth: ComputedMonthlyPoint | null = null;
+  let bestRevenueMonth: ComputedMonthlyPoint | null = null;
+  let worstRevenueMonth: ComputedMonthlyPoint | null = null;
+
   for (const m of monthlyWithProfit) {
     if (!bestMonth || m.netProfit > bestMonth.netProfit) bestMonth = m;
     if (!worstMonth || m.netProfit < worstMonth.netProfit) worstMonth = m;
+    if (!bestRevenueMonth || m.revenue > bestRevenueMonth.revenue) bestRevenueMonth = m;
+    if (!worstRevenueMonth || m.revenue < worstRevenueMonth.revenue) worstRevenueMonth = m;
   }
 
   const healthStatus = determineHealthStatus(
@@ -219,6 +257,13 @@ export function computeReportMetrics(report: ReportInputData): ComputedMetrics {
     profitMarginPct,
     revenueGrowthPct,
     marginDeltaPts
+  );
+
+  const clientSafeTrajectory = determineClientSafeTrajectory(
+    revenueGrowthPct,
+    customerGrowthPct,
+    report.currentPeriod.retentionRatePct,
+    report.currentPeriod.npsScore
   );
 
   return {
@@ -235,6 +280,7 @@ export function computeReportMetrics(report: ReportInputData): ComputedMetrics {
     previousRevenuePerCustomer,
     arpuGrowthPct,
     operatingExpenseRatioPct,
+    annualizedRevenueEstimate,
     monthlyWithProfit,
     revenueCategoriesComputed,
     expenseCategoriesComputed,
@@ -246,6 +292,9 @@ export function computeReportMetrics(report: ReportInputData): ComputedMetrics {
     averageMonthlyProfit,
     bestMonth,
     worstMonth,
+    bestRevenueMonth,
+    worstRevenueMonth,
     healthStatus,
+    clientSafeTrajectory,
   };
 }

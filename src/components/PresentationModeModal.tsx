@@ -7,9 +7,8 @@ import {
   StickyNote,
   X,
 } from 'lucide-react';
-import { AUDIENCE_EDITION_LIST, getAudienceEdition } from '../core/audiences.ts';
+import { AUDIENCE_EDITION_LIST, getAudienceEdition, type ReportSectionKey } from '../core/audiences.ts';
 import {
-  computeReportMetrics,
   formatCurrency,
   formatNumber,
   formatPercent,
@@ -22,9 +21,15 @@ import {
   generateExecutiveInsights,
   generateStrategicRecommendations,
 } from '../core/intelligence.ts';
+import { sanitizeReportForAudience } from '../core/redaction.ts';
 import { runWhatIfSimulation } from '../core/simulator.ts';
-import { resolveBrandTheme } from '../core/themes.ts';
+import { getThemeRadiusPx, resolveBrandTheme } from '../core/themes.ts';
 import type { AudienceEditionId, ReportInputData } from '../core/types.ts';
+import {
+  resolveHeroDetails,
+  resolveKpiStripCards,
+  resolveStoryArcChapters,
+} from '../elements/custom/shared.ts';
 
 interface PresentationModeModalProps {
   report: ReportInputData;
@@ -32,15 +37,24 @@ interface PresentationModeModalProps {
   onClose: () => void;
 }
 
+type SlideId =
+  | 'cover'
+  | 'scorecard'
+  | 'trajectory'
+  | 'mix'
+  | 'story-intelligence'
+  | 'priorities'
+  | 'simulation';
+
 interface DeckSlide {
-  id: string;
+  id: SlideId;
   label: string;
   title: string;
   speakerNotes: string;
 }
 
 export function PresentationModeModal({
-  report,
+  report: rawReport,
   onSelectAudience,
   onClose,
 }: PresentationModeModalProps) {
@@ -49,12 +63,15 @@ export function PresentationModeModal({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  const sanitized = useMemo(() => sanitizeReportForAudience(rawReport), [rawReport]);
+  const report = sanitized.report;
+  const metrics = sanitized.metrics;
+
   const theme = useMemo(() => resolveBrandTheme(report), [report]);
   const audience = useMemo(
     () => getAudienceEdition(report.audienceEdition),
     [report.audienceEdition]
   );
-  const metrics = useMemo(() => computeReportMetrics(report), [report]);
   const trend = useMemo(
     () =>
       filterTrendForAudience(
@@ -68,33 +85,110 @@ export function PresentationModeModal({
     [report, metrics]
   );
   const insights = useMemo(
-    () => filterInsightsForAudience(rawInsights, trend, audience.redactInternalExpenses),
-    [rawInsights, trend, audience.redactInternalExpenses]
+    () =>
+      filterInsightsForAudience(
+        rawInsights,
+        trend,
+        audience.redactInternalExpenses,
+        audience.id
+      ),
+    [rawInsights, trend, audience.redactInternalExpenses, audience.id]
   );
   const recommendations = useMemo(
     () =>
       filterRecommendationsForAudience(
-        generateStrategicRecommendations(report, metrics, rawInsights),
+        generateStrategicRecommendations(report, metrics, rawInsights, audience.id),
         audience.redactInternalExpenses
       ),
-    [report, metrics, rawInsights, audience.redactInternalExpenses]
+    [report, metrics, rawInsights, audience.redactInternalExpenses, audience.id]
   );
 
   const showSimulationSlide = Boolean(
-    report.simulation?.includeInReport && !audience.redactInternalExpenses
+    rawReport.simulation?.includeInReport && !audience.redactInternalExpenses
   );
   const simulation = useMemo(
     () =>
-      showSimulationSlide && report.simulation
-        ? runWhatIfSimulation(report, report.simulation)
+      showSimulationSlide && rawReport.simulation
+        ? runWhatIfSimulation(report, rawReport.simulation)
         : null,
-    [showSimulationSlide, report]
+    [showSimulationSlide, report, rawReport.simulation]
   );
 
   const cur = report.currency;
   const c = theme.colors;
+  const radiusMd = getThemeRadiusPx(theme, 'md');
+  const radiusLg = getThemeRadiusPx(theme, 'lg');
+
+  const heroPrimary = useMemo(() => resolveHeroDetails(report, metrics), [report, metrics]);
+  const scorecardCards = useMemo(
+    () => resolveKpiStripCards(report, metrics, false),
+    [report, metrics]
+  );
+  const storyChapters = useMemo(
+    () => resolveStoryArcChapters(report, metrics, trend),
+    [report, metrics, trend]
+  );
 
   const slides: DeckSlide[] = useMemo(() => {
+    const slideDefs: Record<Exclude<SlideId, 'cover' | 'scorecard'>, { short: string; title: string; speakerNotes: string }> = {
+      trajectory: {
+        short: 'Trajectory',
+        title: 'Monthly Trajectory & Rolling 3M Momentum',
+        speakerNotes: trend.hasSufficientData
+          ? `${trend.summaryHeadline} — ${trend.summaryNarrative}`
+          : 'Monthly scale trajectory across the reporting horizon.',
+      },
+      mix: {
+        short: 'Portfolio',
+        title: audience.redactInternalExpenses
+          ? 'Revenue Portfolio & Partner Segment Reach'
+          : 'Revenue Mix, Cost Drivers & Operating Segments',
+        speakerNotes: `Leading revenue stream: ${metrics.revenueCategoriesComputed[0]?.name ?? 'Primary'} (${metrics.revenueCategoriesComputed[0]?.sharePct.toFixed(1) ?? '0'}% share).${!audience.redactInternalExpenses && metrics.expenseCategoriesComputed[0] ? ` Largest cost driver: ${metrics.expenseCategoriesComputed[0].name} (${metrics.expenseCategoriesComputed[0].sharePct.toFixed(1)}% share).` : ''}`,
+      },
+      'story-intelligence': {
+        short: 'Story & Rules',
+        title:
+          audience.id === 'client'
+            ? 'Partner Journey Arc & Key Observations'
+            : 'Four-Beat Story Arc & Verified Intelligence',
+        speakerNotes: insights
+          .slice(0, 3)
+          .map((ins) => `[${ins.category}] ${ins.headline} (${ins.formulaTrace ?? ins.supportingMetric})`)
+          .join(' | '),
+      },
+      priorities: {
+        short: audience.id === 'client' ? 'Roadmap' : 'Mandate',
+        title: audience.prioritiesHeading,
+        speakerNotes: audience.redactInternalExpenses
+          ? `Shared partner roadmap: ${report.strategicPriorities.map((p) => `${p.title} (${p.horizon})`).join('; ')}. Closing note: ${report.narrative.closingTakeaway}`
+          : `Next-horizon mandate: ${report.strategicPriorities.map((p) => `${p.title} (${p.owner})`).join('; ')}. Closing note: ${report.narrative.closingTakeaway}`,
+      },
+      simulation: {
+        short: 'Scenario',
+        title: `What-If Scenario: ${simulation?.assumptions.scenarioName ?? 'Forecast'}`,
+        speakerNotes: simulation
+          ? `Strictly hypothetical non-actual projection: Customers ${simulation.assumptions.customerDeltaPct >= 0 ? '+' : ''}${simulation.assumptions.customerDeltaPct}%, ARPU ${simulation.assumptions.arpuDeltaPct >= 0 ? '+' : ''}${simulation.assumptions.arpuDeltaPct}% (${simulation.impliedRevenueDeltaPct >= 0 ? '+' : ''}${simulation.impliedRevenueDeltaPct}% implied rev), OpEx ${simulation.assumptions.expenseDeltaPct >= 0 ? '+' : ''}${simulation.assumptions.expenseDeltaPct}% yields projected net profit of ${formatCurrency(simulation.projectedNetProfit, cur)}.`
+          : '',
+      },
+    };
+
+    const sectionToSlide = (sec: ReportSectionKey): Exclude<SlideId, 'cover' | 'scorecard'> | null => {
+      if (sec === 'trends') return 'trajectory';
+      if (sec === 'breakdowns' || sec === 'segments') return 'mix';
+      if (sec === 'story-arc' || sec === 'intelligence') return 'story-intelligence';
+      if (sec === 'priorities' || sec === 'closing') return 'priorities';
+      if (sec === 'simulation' && showSimulationSlide && simulation) return 'simulation';
+      return null;
+    };
+
+    const orderedMiddleIds: Exclude<SlideId, 'cover' | 'scorecard'>[] = [];
+    for (const sec of audience.sectionOrder) {
+      const mapped = sectionToSlide(sec);
+      if (mapped && !orderedMiddleIds.includes(mapped)) {
+        orderedMiddleIds.push(mapped);
+      }
+    }
+
     const base: DeckSlide[] = [
       {
         id: 'cover',
@@ -105,52 +199,21 @@ export function PresentationModeModal({
       {
         id: 'scorecard',
         label: '02 Scorecard',
-        title: 'Hero KPI & Financial Scorecard',
+        title:
+          audience.redactInternalExpenses
+            ? 'Partner Scale & Delivery Scorecard'
+            : `${audience.shortLabel} Hero KPI & Financial Scorecard`,
         speakerNotes: audience.redactInternalExpenses
-          ? `Focus on top-line growth (${formatPercent(metrics.revenueGrowthPct, { signed: true })}) across ${formatNumber(report.currentPeriod.customerCount)} active accounts. Internal cost drivers are withheld under Client & Partner governance.`
-          : `Lead with ${audience.heroLabel}: Net profit settled at ${formatCurrency(metrics.netProfit, cur)} (${formatPercent(metrics.profitMarginPct)} margin, ${metrics.marginDeltaPts >= 0 ? '+' : ''}${metrics.marginDeltaPts.toFixed(1)} pts shift vs ${report.previousPeriodLabel}). Health status: ${metrics.healthStatus}.`,
+          ? `Focus on platform scale (${formatCurrency(report.currentPeriod.revenue, cur, { compact: true })}, ${formatPercent(metrics.revenueGrowthPct, { signed: true })}) across ${formatNumber(report.currentPeriod.customerCount)} active partners. Trajectory: ${metrics.clientSafeTrajectory}.`
+          : `Lead with ${audience.heroLabel}: ${heroPrimary.primaryFormatted} (${heroPrimary.deltaFormatted}). Health status: ${metrics.healthStatus}.`,
       },
-      {
-        id: 'trajectory',
-        label: '03 Trajectory',
-        title: 'Monthly Trajectory & Rolling 3M Momentum',
-        speakerNotes: trend.hasSufficientData
-          ? `${trend.summaryHeadline} — ${trend.summaryNarrative}`
-          : 'Monthly revenue and expense trajectory across the reporting horizon.',
-      },
-      {
-        id: 'mix',
-        label: '04 Portfolio',
-        title: audience.redactInternalExpenses
-          ? 'Revenue Portfolio & Segment Reach'
-          : 'Revenue Mix, Cost Drivers & Operating Segments',
-        speakerNotes: `Leading revenue stream: ${metrics.revenueCategoriesComputed[0]?.name ?? 'Primary'} (${metrics.revenueCategoriesComputed[0]?.sharePct.toFixed(1) ?? '0'}% share).${!audience.redactInternalExpenses && metrics.expenseCategoriesComputed[0] ? ` Largest cost driver: ${metrics.expenseCategoriesComputed[0].name} (${metrics.expenseCategoriesComputed[0].sharePct.toFixed(1)}% share).` : ''}`,
-      },
-      {
-        id: 'story-intelligence',
-        label: '05 Story & Rules',
-        title: 'Four-Beat Story Arc & Verified Intelligence',
-        speakerNotes: insights
-          .slice(0, 3)
-          .map((ins) => `[${ins.category}] ${ins.headline} (${ins.formulaTrace ?? ins.supportingMetric})`)
-          .join(' | '),
-      },
-      {
-        id: 'priorities',
-        label: '06 Mandate',
-        title: 'Strategic Priorities & Leadership Mandate',
-        speakerNotes: `Next-horizon mandate: ${report.strategicPriorities.map((p) => `${p.title} (${p.owner})`).join('; ')}. Closing note: ${report.narrative.closingTakeaway}`,
-      },
+      ...orderedMiddleIds.map((id, idx) => ({
+        id,
+        label: `0${idx + 3} ${slideDefs[id].short}`,
+        title: slideDefs[id].title,
+        speakerNotes: slideDefs[id].speakerNotes,
+      })),
     ];
-
-    if (showSimulationSlide && simulation) {
-      base.push({
-        id: 'simulation',
-        label: '07 Scenario',
-        title: `What-If Scenario: ${simulation.assumptions.scenarioName}`,
-        speakerNotes: `Strictly hypothetical non-actual projection: Revenue ${simulation.assumptions.revenueDeltaPct >= 0 ? '+' : ''}${simulation.assumptions.revenueDeltaPct}%, OpEx ${simulation.assumptions.expenseDeltaPct >= 0 ? '+' : ''}${simulation.assumptions.expenseDeltaPct}% yields projected net profit of ${formatCurrency(simulation.projectedNetProfit, cur)} (${formatCurrency(simulation.netProfitVariance, cur, { signed: true })} variance).`,
-      });
-    }
 
     return base;
   }, [
@@ -160,6 +223,7 @@ export function PresentationModeModal({
     cur,
     trend,
     insights,
+    heroPrimary,
     showSimulationSlide,
     simulation,
   ]);
@@ -223,142 +287,6 @@ export function PresentationModeModal({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [goNext, goPrev, onClose]);
-
-  const heroPrimary = useMemo(() => {
-    if (audience.heroMetric === 'netProfit') {
-      return {
-        label: audience.heroLabel,
-        value: formatCurrency(metrics.netProfit, cur),
-        delta: formatPercent(metrics.profitGrowthPct, { signed: true }),
-        positive: (metrics.profitGrowthPct ?? 0) >= 0,
-        detail: `${formatCurrency(metrics.netProfit - metrics.previousNetProfit, cur, { signed: true })} vs ${report.previousPeriodLabel}`,
-      };
-    }
-    if (audience.heroMetric === 'margin') {
-      return {
-        label: audience.heroLabel,
-        value: formatPercent(metrics.profitMarginPct),
-        delta: `${metrics.marginDeltaPts >= 0 ? '+' : ''}${metrics.marginDeltaPts.toFixed(1)} pts`,
-        positive: metrics.marginDeltaPts >= 0,
-        detail: `vs ${formatPercent(metrics.previousProfitMarginPct)} in ${report.previousPeriodLabel}`,
-      };
-    }
-    if (audience.heroMetric === 'customers') {
-      const diff = report.currentPeriod.customerCount - report.previousPeriod.customerCount;
-      return {
-        label: audience.heroLabel,
-        value: formatNumber(report.currentPeriod.customerCount),
-        delta: formatPercent(metrics.customerGrowthPct, { signed: true }),
-        positive: (metrics.customerGrowthPct ?? 0) >= 0,
-        detail: `${diff >= 0 ? '+' : ''}${formatNumber(diff)} vs ${report.previousPeriodLabel}`,
-      };
-    }
-    return {
-      label: audience.heroLabel,
-      value: formatCurrency(report.currentPeriod.revenue, cur),
-      delta: formatPercent(metrics.revenueGrowthPct, { signed: true }),
-      positive: (metrics.revenueGrowthPct ?? 0) >= 0,
-      detail: `${formatCurrency(report.currentPeriod.revenue - report.previousPeriod.revenue, cur, { signed: true })} vs ${report.previousPeriodLabel}`,
-    };
-  }, [audience, metrics, report, cur]);
-
-  const scorecardCards = useMemo(() => {
-    if (audience.redactInternalExpenses) {
-      return [
-        {
-          label: 'Total Revenue',
-          value: formatCurrency(report.currentPeriod.revenue, cur),
-          sub: `${formatPercent(metrics.revenueGrowthPct, { signed: true })} vs prior`,
-          good: (metrics.revenueGrowthPct ?? 0) >= 0,
-        },
-        {
-          label: 'Active Customers',
-          value: formatNumber(report.currentPeriod.customerCount),
-          sub: `${formatPercent(metrics.customerGrowthPct, { signed: true })} growth`,
-          good: (metrics.customerGrowthPct ?? 0) >= 0,
-        },
-        {
-          label: 'Revenue / Customer',
-          value:
-            metrics.revenuePerCustomer !== null
-              ? formatCurrency(metrics.revenuePerCustomer, cur)
-              : 'N/A',
-          sub: `${formatPercent(metrics.arpuGrowthPct, { signed: true })} ARPU shift`,
-          good: (metrics.arpuGrowthPct ?? 0) >= 0,
-        },
-        {
-          label: 'Retention Rate',
-          value:
-            report.currentPeriod.retentionRatePct !== undefined
-              ? `${report.currentPeriod.retentionRatePct.toFixed(1)}%`
-              : metrics.healthStatus,
-          sub: report.currentPeriod.npsScore !== undefined ? `NPS ${report.currentPeriod.npsScore}` : report.reportingPeriod,
-          good: true,
-        },
-      ];
-    }
-    return [
-      {
-        label: 'Total Revenue',
-        value: formatCurrency(report.currentPeriod.revenue, cur),
-        sub: `${formatPercent(metrics.revenueGrowthPct, { signed: true })} vs prior`,
-        good: (metrics.revenueGrowthPct ?? 0) >= 0,
-      },
-      {
-        label: 'Operating Expenses',
-        value: formatCurrency(report.currentPeriod.expenses, cur),
-        sub: `${formatPercent(metrics.expenseGrowthPct, { signed: true })} vs prior`,
-        good: (metrics.expenseGrowthPct ?? 0) <= (metrics.revenueGrowthPct ?? 0),
-      },
-      {
-        label: 'Net Profit',
-        value: formatCurrency(metrics.netProfit, cur),
-        sub: `${formatPercent(metrics.profitGrowthPct, { signed: true })} vs prior`,
-        good: metrics.netProfit >= 0 && (metrics.profitGrowthPct ?? 0) >= 0,
-      },
-      {
-        label: 'Profit Margin',
-        value: formatPercent(metrics.profitMarginPct),
-        sub: `${metrics.marginDeltaPts >= 0 ? '+' : ''}${metrics.marginDeltaPts.toFixed(1)} pts shift`,
-        good: metrics.marginDeltaPts >= 0,
-      },
-      {
-        label: 'Active Customers',
-        value: formatNumber(report.currentPeriod.customerCount),
-        sub: `${formatPercent(metrics.customerGrowthPct, { signed: true })} growth`,
-        good: (metrics.customerGrowthPct ?? 0) >= 0,
-      },
-    ];
-  }, [audience.redactInternalExpenses, report, cur, metrics]);
-
-  const storyChapters = useMemo(() => {
-    const revTrend = trend.metrics.find((m) => m.id === 'revenue');
-    return [
-      {
-        step: '01 · Scale & Demand',
-        body: `${report.branding.companyName} recorded ${formatCurrency(report.currentPeriod.revenue, cur)} in revenue (${formatPercent(metrics.revenueGrowthPct, { signed: true })} vs ${report.previousPeriodLabel}) across ${formatNumber(report.currentPeriod.customerCount)} accounts.`,
-      },
-      {
-        step: `02 · Rolling ${trend.windowMonthsCount || 3}M Momentum`,
-        body:
-          trend.hasSufficientData && revTrend
-            ? `${trend.overallSignal} cadence: ${trend.latestMonthLabel} (${revTrend.currentMonthFormatted}) tracked ${revTrend.deltaFormatted} against the ${revTrend.rolling3MoAvgFormatted} trailing baseline.`
-            : `Peak monthly velocity occurred in ${metrics.bestMonth?.month ?? 'the period'} (${formatCurrency(metrics.bestMonth?.revenue ?? 0, cur)}).`,
-      },
-      {
-        step: audience.redactInternalExpenses ? '03 · Account Value' : '03 · Operating Leverage',
-        body: audience.redactInternalExpenses
-          ? `Account revenue averaged ${metrics.revenuePerCustomer !== null ? formatCurrency(metrics.revenuePerCustomer, cur) : 'N/A'} (${formatPercent(metrics.arpuGrowthPct, { signed: true })} YoP).`
-          : `Operating discipline generated ${formatCurrency(metrics.netProfit, cur)} net profit at ${formatPercent(metrics.profitMarginPct)} margin (${metrics.marginDeltaPts >= 0 ? '+' : ''}${metrics.marginDeltaPts.toFixed(1)} pts).`,
-      },
-      {
-        step: '04 · Forward Mandate',
-        body: report.strategicPriorities[0]
-          ? `${report.strategicPriorities[0].title} (${report.strategicPriorities[0].owner}) — targeting ${report.strategicPriorities[0].targetImpact}.`
-          : report.narrative.closingTakeaway,
-      },
-    ];
-  }, [report, cur, metrics, trend, audience.redactInternalExpenses]);
 
   const renderTrajectorySvg = () => {
     const series = metrics.monthlyWithProfit;
@@ -452,21 +380,24 @@ export function PresentationModeModal({
         {series.map((m, i) => {
           const cx = padLeft + i * groupW + groupW / 2;
           const revTop = yFor(Math.max(0, m.revenue));
-          const revH = Math.max(2, zeroY - revTop);
+          const revH = m.revenue > 0 ? Math.max(2, zeroY - revTop) : 0;
           const expTop = yFor(Math.max(0, m.expenses));
-          const expH = Math.max(2, zeroY - expTop);
+          const expH = m.expenses > 0 ? Math.max(2, zeroY - expTop) : 0;
+          const compactLabel = series.length > 6 ? m.month.slice(0, 3) : m.month;
 
           if (audience.redactInternalExpenses) {
             return (
               <g key={m.month}>
-                <rect
-                  x={cx - barW / 2}
-                  y={revTop}
-                  width={barW}
-                  height={revH}
-                  rx={3}
-                  fill={c.chartRevenue}
-                />
+                {revH > 0 ? (
+                  <rect
+                    x={cx - barW / 2}
+                    y={revTop}
+                    width={barW}
+                    height={revH}
+                    rx={3}
+                    fill={c.chartRevenue}
+                  />
+                ) : null}
                 {series.length <= 8 ? (
                   <text
                     x={cx}
@@ -476,7 +407,7 @@ export function PresentationModeModal({
                     fontSize="10"
                     fontFamily={theme.typography.monoFont}
                   >
-                    {formatCurrency(m.revenue, cur, { compact: true })}
+                    {m.revenue > 0 ? formatCurrency(m.revenue, cur, { compact: true }) : '—'}
                   </text>
                 ) : null}
                 <text
@@ -487,7 +418,7 @@ export function PresentationModeModal({
                   fontSize="11"
                   fontFamily={theme.typography.monoFont}
                 >
-                  {m.month}
+                  {compactLabel}
                 </text>
               </g>
             );
@@ -495,23 +426,27 @@ export function PresentationModeModal({
 
           return (
             <g key={m.month}>
-              <rect
-                x={cx - barW - 2}
-                y={revTop}
-                width={barW}
-                height={revH}
-                rx={3}
-                fill={c.chartRevenue}
-              />
-              <rect
-                x={cx + 2}
-                y={expTop}
-                width={barW}
-                height={expH}
-                rx={3}
-                fill={c.chartExpense}
-                opacity={0.88}
-              />
+              {revH > 0 ? (
+                <rect
+                  x={cx - barW - 2}
+                  y={revTop}
+                  width={barW}
+                  height={revH}
+                  rx={3}
+                  fill={c.chartRevenue}
+                />
+              ) : null}
+              {expH > 0 ? (
+                <rect
+                  x={cx + 2}
+                  y={expTop}
+                  width={barW}
+                  height={expH}
+                  rx={3}
+                  fill={c.chartExpense}
+                  opacity={0.88}
+                />
+              ) : null}
               {series.length <= 8 ? (
                 <text
                   x={cx - barW / 2 - 2}
@@ -521,7 +456,7 @@ export function PresentationModeModal({
                   fontSize="10"
                   fontFamily={theme.typography.monoFont}
                 >
-                  {formatCurrency(m.revenue, cur, { compact: true })}
+                  {m.revenue > 0 ? formatCurrency(m.revenue, cur, { compact: true }) : '—'}
                 </text>
               ) : null}
               <text
@@ -532,7 +467,7 @@ export function PresentationModeModal({
                 fontSize="11"
                 fontFamily={theme.typography.monoFont}
               >
-                {m.month}
+                {compactLabel}
               </text>
             </g>
           );
@@ -649,14 +584,24 @@ export function PresentationModeModal({
       {/* Main Slide Canvas */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex items-center justify-center">
         <div
-          className="w-full max-w-[1140px] rounded-xl overflow-hidden shadow-2xl border transition-colors"
+          className="w-full max-w-[1140px] overflow-hidden shadow-2xl border transition-colors"
           style={{
             backgroundColor: c.canvas,
             borderColor: c.border,
             color: c.text,
             fontFamily: theme.typography.bodyFont,
+            borderRadius: `${radiusLg}px`,
           }}
         >
+          {theme.layoutStyle === 'swiss-precision' ? (
+            <div
+              className="h-1.5 w-full"
+              style={{
+                background: `linear-gradient(90deg, #0B1120 0%, ${c.accent} 65%, ${c.secondary} 100%)`,
+              }}
+            />
+          ) : null}
+
           {/* Slide Stage Header */}
           <div
             className="px-6 sm:px-10 py-4 border-b flex flex-wrap items-center justify-between gap-2 text-xs"
@@ -677,7 +622,7 @@ export function PresentationModeModal({
               ) : null}
               <span
                 className="font-bold uppercase tracking-wider truncate"
-                style={{ color: c.accent }}
+                style={{ color: c.accentInk }}
               >
                 {report.branding.companyName}
               </span>
@@ -696,7 +641,7 @@ export function PresentationModeModal({
                 <div className="space-y-4 max-w-3xl">
                   <div
                     className="font-mono-num text-xs uppercase tracking-[0.14em] font-semibold"
-                    style={{ color: c.accent }}
+                    style={{ color: c.accentInk }}
                   >
                     {audience.name} &middot; {report.branding.classification}
                   </div>
@@ -712,24 +657,28 @@ export function PresentationModeModal({
                 </div>
 
                 <div
-                  className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 rounded-lg border"
-                  style={{ backgroundColor: c.surface, borderColor: c.border }}
+                  className="grid grid-cols-1 md:grid-cols-3 gap-4 p-5 border"
+                  style={{
+                    backgroundColor: c.surface,
+                    borderColor: c.border,
+                    borderRadius: `${radiusMd}px`,
+                  }}
                 >
                   <div>
                     <div
                       className="text-[11px] uppercase tracking-wider font-semibold"
                       style={{ color: c.textMuted }}
                     >
-                      {heroPrimary.label}
+                      {heroPrimary.eyebrow}
                     </div>
                     <div
                       className="font-mono-num text-2xl sm:text-3xl font-bold mt-1"
-                      style={{ color: c.accent }}
+                      style={{ color: c.accentInk }}
                     >
-                      {heroPrimary.value}
+                      {heroPrimary.primaryFormatted}
                     </div>
                     <div className="font-mono-num text-xs mt-1" style={{ color: c.textMuted }}>
-                      {heroPrimary.delta} ({heroPrimary.detail})
+                      {heroPrimary.deltaFormatted} ({heroPrimary.priorContext})
                     </div>
                   </div>
 
@@ -738,7 +687,7 @@ export function PresentationModeModal({
                       className="text-[11px] uppercase tracking-wider font-semibold"
                       style={{ color: c.textMuted }}
                     >
-                      Executive Thesis
+                      {audience.summaryHeading}
                     </div>
                     <p className="text-xs sm:text-sm mt-1 leading-relaxed" style={{ color: c.text }}>
                       {report.narrative.overview}
@@ -750,7 +699,7 @@ export function PresentationModeModal({
                       className="text-[11px] uppercase tracking-wider font-semibold"
                       style={{ color: c.textMuted }}
                     >
-                      Closing Takeaway
+                      {audience.closingHeading}
                     </div>
                     <p className="text-xs sm:text-sm mt-1 leading-relaxed" style={{ color: c.text }}>
                       {report.narrative.closingTakeaway}
@@ -774,12 +723,13 @@ export function PresentationModeModal({
             {activeSlide.id === 'scorecard' ? (
               <div className="space-y-6">
                 <div
-                  className="p-6 sm:p-7 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-6"
+                  className="p-6 sm:p-7 border flex flex-col md:flex-row md:items-center justify-between gap-6"
                   style={{
                     backgroundColor: c.elevated,
                     borderColor: c.border,
                     borderTopWidth: '3px',
                     borderTopColor: c.accent,
+                    borderRadius: `${radiusLg}px`,
                   }}
                 >
                   <div>
@@ -787,22 +737,22 @@ export function PresentationModeModal({
                       className="text-xs font-bold uppercase tracking-widest"
                       style={{ color: c.textMuted }}
                     >
-                      {heroPrimary.label}
+                      {heroPrimary.eyebrow}
                     </div>
                     <div
                       className="font-mono-num text-4xl sm:text-5xl font-bold mt-2 tracking-tight"
-                      style={{ color: c.accent }}
+                      style={{ color: c.accentInk }}
                     >
-                      {heroPrimary.value}
+                      {heroPrimary.primaryFormatted}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
                       <span
                         className="font-mono-num font-bold"
-                        style={{ color: heroPrimary.positive ? c.positive : c.critical }}
+                        style={{ color: heroPrimary.isPositive ? c.positive : c.critical }}
                       >
-                        {heroPrimary.positive ? '▲' : '▼'} {heroPrimary.delta}
+                        {heroPrimary.isPositive ? '▲' : '▼'} {heroPrimary.deltaFormatted}
                       </span>
-                      <span style={{ color: c.textMuted }}>{heroPrimary.detail}</span>
+                      <span style={{ color: c.textMuted }}>{heroPrimary.priorContext}</span>
                     </div>
                   </div>
 
@@ -847,13 +797,15 @@ export function PresentationModeModal({
                         className="text-[11px] uppercase tracking-wider"
                         style={{ color: c.textMuted }}
                       >
-                        Business Health
+                        {audience.redactInternalExpenses ? 'Partner Trajectory' : 'Business Health'}
                       </div>
                       <div
                         className="text-xl font-bold mt-1"
                         style={{ fontFamily: theme.typography.headingFont, color: c.text }}
                       >
-                        {metrics.healthStatus}
+                        {audience.redactInternalExpenses
+                          ? metrics.clientSafeTrajectory
+                          : metrics.healthStatus}
                       </div>
                       <div className="font-mono-num text-xs mt-1" style={{ color: c.textMuted }}>
                         {report.reportingPeriod}
@@ -870,12 +822,13 @@ export function PresentationModeModal({
                   {scorecardCards.map((card) => (
                     <div
                       key={card.label}
-                      className="p-4 rounded-lg border"
+                      className="p-4 border"
                       style={{
                         backgroundColor: c.surface,
                         borderColor: c.border,
                         borderTopWidth: '2px',
-                        borderTopColor: card.good ? c.accent : c.warning,
+                        borderTopColor: card.positive ? c.accent : c.warning,
+                        borderRadius: `${radiusMd}px`,
                       }}
                     >
                       <div
@@ -888,13 +841,13 @@ export function PresentationModeModal({
                         className="font-mono-num text-xl font-bold mt-2"
                         style={{ color: c.text }}
                       >
-                        {card.value}
+                        {card.val}
                       </div>
                       <div
                         className="font-mono-num text-xs font-semibold mt-1.5"
-                        style={{ color: card.good ? c.positive : c.warning }}
+                        style={{ color: card.positive ? c.positive : c.warning }}
                       >
-                        {card.good ? '▲' : '▼'} {card.sub}
+                        {card.positive ? '▲' : '▼'} {card.sub}
                       </div>
                     </div>
                   ))}
@@ -915,6 +868,9 @@ export function PresentationModeModal({
                     <p className="text-xs mt-1" style={{ color: c.textMuted }}>
                       {trend.summaryHeadline} — Avg Monthly Revenue:{' '}
                       {formatCurrency(metrics.averageMonthlyRevenue, cur)}
+                      {metrics.bestRevenueMonth
+                        ? ` · Peak Month: ${metrics.bestRevenueMonth.month} (${formatCurrency(metrics.bestRevenueMonth.revenue, cur, { compact: true })})`
+                        : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-4 text-xs" style={{ color: c.textMuted }}>
@@ -954,14 +910,21 @@ export function PresentationModeModal({
                 </div>
 
                 <div
-                  className="p-4 rounded-xl border"
-                  style={{ backgroundColor: c.surface, borderColor: c.border }}
+                  className="p-4 border"
+                  style={{
+                    backgroundColor: c.surface,
+                    borderColor: c.border,
+                    borderRadius: `${radiusLg}px`,
+                  }}
                 >
                   {renderTrajectorySvg()}
                 </div>
 
                 {trend.hasSufficientData ? (
-                  <div className="overflow-x-auto rounded-lg border" style={{ borderColor: c.border }}>
+                  <div
+                    className="overflow-x-auto border"
+                    style={{ borderColor: c.border, borderRadius: `${radiusMd}px` }}
+                  >
                     <table className="w-full text-xs border-collapse">
                       <thead>
                         <tr
@@ -1053,8 +1016,12 @@ export function PresentationModeModal({
                   } gap-5`}
                 >
                   <div
-                    className="p-5 rounded-xl border space-y-3"
-                    style={{ backgroundColor: c.surface, borderColor: c.border }}
+                    className="p-5 border space-y-3"
+                    style={{
+                      backgroundColor: c.surface,
+                      borderColor: c.border,
+                      borderRadius: `${radiusLg}px`,
+                    }}
                   >
                     <div className="flex items-baseline justify-between">
                       <div className="text-sm font-bold">Revenue Streams</div>
@@ -1074,13 +1041,15 @@ export function PresentationModeModal({
                           className="h-2 rounded overflow-hidden"
                           style={{ backgroundColor: c.elevated }}
                         >
-                          <div
-                            className="h-full rounded"
-                            style={{
-                              width: `${Math.max(3, item.sharePct)}%`,
-                              backgroundColor: c.chartRevenue,
-                            }}
-                          />
+                          {item.sharePct > 0 ? (
+                            <div
+                              className="h-full rounded"
+                              style={{
+                                width: `${Math.max(3, item.sharePct)}%`,
+                                backgroundColor: c.chartRevenue,
+                              }}
+                            />
+                          ) : null}
                         </div>
                       </div>
                     ))}
@@ -1088,8 +1057,12 @@ export function PresentationModeModal({
 
                   {!audience.redactInternalExpenses ? (
                     <div
-                      className="p-5 rounded-xl border space-y-3"
-                      style={{ backgroundColor: c.surface, borderColor: c.border }}
+                      className="p-5 border space-y-3"
+                      style={{
+                        backgroundColor: c.surface,
+                        borderColor: c.border,
+                        borderRadius: `${radiusLg}px`,
+                      }}
                     >
                       <div className="flex items-baseline justify-between">
                         <div className="text-sm font-bold">Operating Cost Drivers</div>
@@ -1109,13 +1082,15 @@ export function PresentationModeModal({
                             className="h-2 rounded overflow-hidden"
                             style={{ backgroundColor: c.elevated }}
                           >
-                            <div
-                              className="h-full rounded"
-                              style={{
-                                width: `${Math.max(3, item.sharePct)}%`,
-                                backgroundColor: c.chartExpense,
-                              }}
-                            />
+                            {item.sharePct > 0 ? (
+                              <div
+                                className="h-full rounded"
+                                style={{
+                                  width: `${Math.max(3, item.sharePct)}%`,
+                                  backgroundColor: c.chartExpense,
+                                }}
+                              />
+                            ) : null}
                           </div>
                         </div>
                       ))}
@@ -1124,7 +1099,10 @@ export function PresentationModeModal({
                 </div>
 
                 {metrics.segmentsComputed.length > 0 ? (
-                  <div className="overflow-x-auto rounded-lg border" style={{ borderColor: c.border }}>
+                  <div
+                    className="overflow-x-auto border"
+                    style={{ borderColor: c.border, borderRadius: `${radiusMd}px` }}
+                  >
                     <table className="w-full text-xs border-collapse">
                       <thead>
                         <tr style={{ backgroundColor: c.tableHeaderBg, color: c.tableHeaderText }}>
@@ -1183,17 +1161,18 @@ export function PresentationModeModal({
                   {storyChapters.map((ch) => (
                     <div
                       key={ch.step}
-                      className="p-4 rounded-lg border"
+                      className="p-4 border"
                       style={{
                         backgroundColor: c.surface,
                         borderColor: c.border,
                         borderTopWidth: '2px',
                         borderTopColor: c.accent,
+                        borderRadius: `${radiusMd}px`,
                       }}
                     >
                       <div
                         className="font-mono-num text-[11px] font-bold"
-                        style={{ color: c.accent }}
+                        style={{ color: c.accentInk }}
                       >
                         {ch.step}
                       </div>
@@ -1210,16 +1189,22 @@ export function PresentationModeModal({
                       className="text-xs font-bold uppercase tracking-wider"
                       style={{ color: c.textMuted }}
                     >
-                      Verified Financial Observations
+                      {audience.redactInternalExpenses
+                        ? 'Partner Scale & Delivery Insights'
+                        : 'Verified Financial Observations'}
                     </div>
                     {insights.slice(0, 3).map((ins) => (
                       <div
                         key={ins.id}
-                        className="p-3.5 rounded-lg border"
-                        style={{ backgroundColor: c.surface, borderColor: c.border }}
+                        className="p-3.5 border"
+                        style={{
+                          backgroundColor: c.surface,
+                          borderColor: c.border,
+                          borderRadius: `${radiusMd}px`,
+                        }}
                       >
                         <div className="flex justify-between text-[11px] font-mono-num">
-                          <span style={{ color: c.accent }}>{ins.category}</span>
+                          <span style={{ color: c.accentInk }}>{ins.category}</span>
                           <span style={{ color: c.textMuted }}>{ins.supportingMetric}</span>
                         </div>
                         <div className="text-sm font-bold mt-1">{ins.headline}</div>
@@ -1235,15 +1220,21 @@ export function PresentationModeModal({
                       className="text-xs font-bold uppercase tracking-wider"
                       style={{ color: c.textMuted }}
                     >
-                      Rule-Derived Advisory Actions
+                      {audience.redactInternalExpenses
+                        ? 'Recommended Partner Initiatives'
+                        : 'Rule-Derived Advisory Actions'}
                     </div>
                     {recommendations.slice(0, 3).map((rec, idx) => (
                       <div
                         key={rec.id}
-                        className="p-3.5 rounded-lg border"
-                        style={{ backgroundColor: c.elevated, borderColor: c.border }}
+                        className="p-3.5 border"
+                        style={{
+                          backgroundColor: c.elevated,
+                          borderColor: c.border,
+                          borderRadius: `${radiusMd}px`,
+                        }}
                       >
-                        <div className="font-mono-num text-[11px]" style={{ color: c.accent }}>
+                        <div className="font-mono-num text-[11px]" style={{ color: c.accentInk }}>
                           0{idx + 1} &middot; {rec.priority} Priority
                         </div>
                         <div className="text-sm font-bold mt-1">{rec.title}</div>
@@ -1270,14 +1261,22 @@ export function PresentationModeModal({
                   {report.strategicPriorities.map((sp, i) => (
                     <div
                       key={sp.id}
-                      className="p-5 rounded-xl border space-y-2"
-                      style={{ backgroundColor: c.surface, borderColor: c.border }}
+                      className="p-5 border space-y-2"
+                      style={{
+                        backgroundColor: c.surface,
+                        borderColor: c.border,
+                        borderRadius: `${radiusLg}px`,
+                      }}
                     >
                       <div className="flex items-center justify-between font-mono-num text-xs">
-                        <span style={{ color: c.accent }}>
+                        <span style={{ color: c.accentInk }}>
                           0{i + 1} &middot; {sp.horizon}
                         </span>
-                        <span style={{ color: c.textMuted }}>Owner: {sp.owner}</span>
+                        {!audience.redactInternalExpenses ? (
+                          <span style={{ color: c.textMuted }}>Owner: {sp.owner}</span>
+                        ) : (
+                          <span style={{ color: c.textMuted }}>Client Value Milestone</span>
+                        )}
                       </div>
                       <div className="text-base font-bold">{sp.title}</div>
                       <p className="text-xs leading-relaxed" style={{ color: c.textMuted }}>
@@ -1294,11 +1293,15 @@ export function PresentationModeModal({
                 </div>
 
                 <div
-                  className="p-5 rounded-xl border"
-                  style={{ backgroundColor: c.elevated, borderColor: c.border }}
+                  className="p-5 border"
+                  style={{
+                    backgroundColor: c.elevated,
+                    borderColor: c.border,
+                    borderRadius: `${radiusLg}px`,
+                  }}
                 >
-                  <div className="text-xs font-bold uppercase tracking-wider" style={{ color: c.accent }}>
-                    Closing Executive Takeaway
+                  <div className="text-xs font-bold uppercase tracking-wider" style={{ color: c.accentInk }}>
+                    {audience.closingHeading}
                   </div>
                   <p className="text-sm mt-2 leading-relaxed">{report.narrative.closingTakeaway}</p>
                   <div className="text-[11px] mt-3 pt-2 border-t" style={{ borderColor: c.border, color: c.textMuted }}>
@@ -1313,8 +1316,12 @@ export function PresentationModeModal({
             {activeSlide.id === 'simulation' && simulation ? (
               <div className="space-y-6">
                 <div
-                  className="p-5 rounded-xl border border-dashed"
-                  style={{ backgroundColor: c.warningBg, borderColor: c.warning }}
+                  className="p-5 border border-dashed"
+                  style={{
+                    backgroundColor: c.warningBg,
+                    borderColor: c.warning,
+                    borderRadius: `${radiusLg}px`,
+                  }}
                 >
                   <div
                     className="font-mono-num text-xs font-bold uppercase tracking-wider"
@@ -1329,19 +1336,18 @@ export function PresentationModeModal({
                     {simulation.assumptions.scenarioName}
                   </h2>
                   <p className="text-xs mt-1.5" style={{ color: c.textMuted }}>
-                    Assumptions applied to reported actuals: Revenue{' '}
-                    {simulation.assumptions.revenueDeltaPct >= 0 ? '+' : ''}
-                    {simulation.assumptions.revenueDeltaPct}% &middot; OpEx{' '}
-                    {simulation.assumptions.expenseDeltaPct >= 0 ? '+' : ''}
-                    {simulation.assumptions.expenseDeltaPct}% &middot; Customers{' '}
+                    Assumptions: Customers{' '}
                     {simulation.assumptions.customerDeltaPct >= 0 ? '+' : ''}
-                    {simulation.assumptions.customerDeltaPct}% &middot; ARPU{' '}
+                    {simulation.assumptions.customerDeltaPct}% &times; ARPU{' '}
                     {simulation.assumptions.arpuDeltaPct >= 0 ? '+' : ''}
-                    {simulation.assumptions.arpuDeltaPct}%
+                    {simulation.assumptions.arpuDeltaPct}% ({simulation.impliedRevenueDeltaPct >= 0 ? '+' : ''}
+                    {simulation.impliedRevenueDeltaPct}% implied revenue) &middot; OpEx{' '}
+                    {simulation.assumptions.expenseDeltaPct >= 0 ? '+' : ''}
+                    {simulation.assumptions.expenseDeltaPct}%
                   </p>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {[
                     {
                       label: 'Projected Revenue',
@@ -1367,11 +1373,36 @@ export function PresentationModeModal({
                       actual: formatPercent(simulation.actualMarginPct),
                       variance: `${simulation.marginVariancePts >= 0 ? '+' : ''}${simulation.marginVariancePts.toFixed(1)} pts`,
                     },
+                    {
+                      label: 'Simulated Customers',
+                      val: formatNumber(simulation.projectedCustomers),
+                      actual: formatNumber(simulation.actualCustomers),
+                      variance: `${simulation.customerVariance >= 0 ? '+' : ''}${formatNumber(simulation.customerVariance)}`,
+                    },
+                    {
+                      label: 'Simulated ARPU',
+                      val:
+                        simulation.projectedArpu !== null
+                          ? formatCurrency(simulation.projectedArpu, cur)
+                          : 'N/A',
+                      actual:
+                        simulation.actualArpu !== null
+                          ? formatCurrency(simulation.actualArpu, cur)
+                          : 'N/A',
+                      variance:
+                        simulation.arpuVariance !== null
+                          ? formatCurrency(simulation.arpuVariance, cur, { signed: true })
+                          : 'N/A',
+                    },
                   ].map((item) => (
                     <div
                       key={item.label}
-                      className="p-4 rounded-xl border"
-                      style={{ backgroundColor: c.surface, borderColor: c.border }}
+                      className="p-4 border"
+                      style={{
+                        backgroundColor: c.surface,
+                        borderColor: c.border,
+                        borderRadius: `${radiusLg}px`,
+                      }}
                     >
                       <div
                         className="text-[11px] font-bold uppercase tracking-wider"
@@ -1379,7 +1410,7 @@ export function PresentationModeModal({
                       >
                         {item.label} (Simulated)
                       </div>
-                      <div className="font-mono-num text-2xl font-bold mt-2" style={{ color: c.accent }}>
+                      <div className="font-mono-num text-2xl font-bold mt-2" style={{ color: c.accentInk }}>
                         {item.val}
                       </div>
                       <div className="font-mono-num text-xs mt-1.5" style={{ color: c.textMuted }}>
@@ -1405,7 +1436,7 @@ export function PresentationModeModal({
                 color: c.textMuted,
               }}
             >
-              <span className="font-mono-num font-bold uppercase mr-2" style={{ color: c.accent }}>
+              <span className="font-mono-num font-bold uppercase mr-2" style={{ color: c.accentInk }}>
                 Speaker Notes:
               </span>
               {activeSlide.speakerNotes}

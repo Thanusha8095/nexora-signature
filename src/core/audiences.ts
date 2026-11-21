@@ -24,6 +24,9 @@ export interface AudienceEditionSpec {
   showGovernanceDisclaimer: boolean;
   sectionOrder: ReportSectionKey[];
   coverKicker: string;
+  summaryHeading: string;
+  prioritiesHeading: string;
+  closingHeading: string;
 }
 
 export const AUDIENCE_EDITIONS: Record<AudienceEditionId, AudienceEditionSpec> = {
@@ -33,24 +36,27 @@ export const AUDIENCE_EDITIONS: Record<AudienceEditionId, AudienceEditionSpec> =
     shortLabel: 'Board',
     targetReader: 'Board of Directors & Audit Committee',
     focusDescription:
-      'Balanced fiduciary brief leading with period revenue, full audit comparison ledger, risk observations, and segment unit margins.',
+      'Fiduciary governance brief prioritizing top-line scale, period-over-period variance ledger, enterprise margin resilience, risk signals, and audited segment performance.',
     heroMetric: 'revenue',
-    heroLabel: 'Primary Period Revenue · Fiduciary Audit View',
+    heroLabel: 'Period Revenue · Fiduciary Governance & Variance',
     redactInternalExpenses: false,
     showGovernanceDisclaimer: true,
     sectionOrder: [
       'story-arc',
       'summary',
-      'trends',
-      'breakdowns',
       'comparison',
+      'trends',
       'segments',
+      'breakdowns',
       'intelligence',
       'priorities',
       'simulation',
       'closing',
     ],
     coverKicker: 'Board of Directors Edition',
+    summaryHeading: 'Board Governance Summary',
+    prioritiesHeading: 'Board-Reviewed Strategic Priorities',
+    closingHeading: 'Fiduciary Conclusion & Accountability',
   },
   ceo: {
     id: 'ceo',
@@ -58,9 +64,9 @@ export const AUDIENCE_EDITIONS: Record<AudienceEditionId, AudienceEditionSpec> =
     shortLabel: 'CEO',
     targetReader: 'Chief Executive & Operating Leadership',
     focusDescription:
-      'Action-first execution view centering Net Profit, strategic priorities, cost-driver efficiency, and rule-based operating interventions.',
+      'Action-first command briefing elevating net profit velocity, operating leverage spread, immediate executive decisions, and cost-driver efficiency.',
     heroMetric: 'netProfit',
-    heroLabel: 'Net Operating Profit · Executive Command View',
+    heroLabel: 'Net Operating Profit · Executive Command',
     redactInternalExpenses: false,
     showGovernanceDisclaimer: true,
     sectionOrder: [
@@ -69,13 +75,16 @@ export const AUDIENCE_EDITIONS: Record<AudienceEditionId, AudienceEditionSpec> =
       'priorities',
       'trends',
       'breakdowns',
-      'segments',
       'comparison',
+      'segments',
       'summary',
       'simulation',
       'closing',
     ],
     coverKicker: 'CEO Operating Edition',
+    summaryHeading: 'CEO Operating Narrative',
+    prioritiesHeading: 'Executive Decisions & Operating Agenda',
+    closingHeading: 'Executive Operating Mandate',
   },
   investor: {
     id: 'investor',
@@ -83,24 +92,27 @@ export const AUDIENCE_EDITIONS: Record<AudienceEditionId, AudienceEditionSpec> =
     shortLabel: 'Investor',
     targetReader: 'Institutional Shareholders & Capital Partners',
     focusDescription:
-      'Growth and margin expansion narrative emphasizing top-line trajectory, segment mix, ARPU expansion, and forward scenario modeling.',
+      'Capital-efficiency and compounding brief foregrounding annualized run-rate, ARPU expansion, retention/NPS quality, unit margins, and forward scenario yield.',
     heroMetric: 'margin',
-    heroLabel: 'Operating Margin & Capital Efficiency',
+    heroLabel: 'Net Operating Margin · Capital Yield View',
     redactInternalExpenses: false,
     showGovernanceDisclaimer: true,
     sectionOrder: [
       'story-arc',
       'summary',
-      'comparison',
       'segments',
+      'comparison',
       'trends',
       'breakdowns',
-      'intelligence',
       'simulation',
+      'intelligence',
       'priorities',
       'closing',
     ],
     coverKicker: 'Shareholder & Investor Edition',
+    summaryHeading: 'Shareholder & Capital Commentary',
+    prioritiesHeading: 'Value-Creation & Capital Catalysts',
+    closingHeading: 'Forward Capital Allocation Outlook',
   },
   team: {
     id: 'team',
@@ -108,21 +120,24 @@ export const AUDIENCE_EDITIONS: Record<AudienceEditionId, AudienceEditionSpec> =
     shortLabel: 'Team',
     targetReader: 'Company-Wide Operating Teams',
     focusDescription:
-      'Transparent momentum brief highlighting customer wins, monthly trajectory, company achievements, and aligned quarterly priorities.',
+      'Execution and milestone brief centering customer wins, department deliverables, named initiative owners, target attainment, and segment momentum.',
     heroMetric: 'customers',
-    heroLabel: 'Active Customers Served · Momentum View',
+    heroLabel: 'Active Customers Served · Execution Momentum',
     redactInternalExpenses: false,
     showGovernanceDisclaimer: false,
     sectionOrder: [
       'story-arc',
-      'summary',
       'priorities',
+      'summary',
       'trends',
       'segments',
       'intelligence',
       'closing',
     ],
     coverKicker: 'Internal All-Hands Edition',
+    summaryHeading: 'Company-Wide Wins & Progress',
+    prioritiesHeading: 'Team Execution Milestones, Owners & Deadlines',
+    closingHeading: 'Next Quarter Team Focus',
   },
   client: {
     id: 'client',
@@ -130,9 +145,9 @@ export const AUDIENCE_EDITIONS: Record<AudienceEditionId, AudienceEditionSpec> =
     shortLabel: 'Client',
     targetReader: 'Enterprise Clients & External Strategic Partners',
     focusDescription:
-      'External-safe partnership review showcasing scale, customer growth, product delivery pillars, and key milestones—automatically redacting internal cost structures.',
+      'External partner value review showcasing delivered scale, adoption trajectory, retention and service quality—automatically redacting internal expenses, profit, margins, and internal owners.',
     heroMetric: 'customers',
-    heroLabel: 'Platform Scale & Active Customer Ecosystem',
+    heroLabel: 'Partner Ecosystem Scale & Delivered Value',
     redactInternalExpenses: true,
     showGovernanceDisclaimer: true,
     sectionOrder: [
@@ -145,6 +160,9 @@ export const AUDIENCE_EDITIONS: Record<AudienceEditionId, AudienceEditionSpec> =
       'closing',
     ],
     coverKicker: 'External Client & Partner Edition',
+    summaryHeading: 'Partnership Value & Delivery Summary',
+    prioritiesHeading: 'Client-Facing Value Roadmap',
+    closingHeading: 'Partnership Outlook',
   },
 };
 

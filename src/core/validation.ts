@@ -1,4 +1,7 @@
+import { computeReportMetrics } from './calculations.ts';
+import { containsConfidentialFinancialReference } from './redaction.ts';
 import { sanitizeCssColor, validateSafeImageDataUrl } from './security.ts';
+import { computeHexContrast, resolveBrandTheme } from './themes.ts';
 import type { ReportInputData, ValidationResult } from './types.ts';
 
 export function validateReportData(report: ReportInputData): ValidationResult {
@@ -49,6 +52,26 @@ export function validateReportData(report: ReportInputData): ValidationResult {
     errors['currentPeriod.customerCount'] = 'Customer count must be a non-negative number.';
   }
 
+  if (report.currentPeriod.retentionRatePct !== undefined) {
+    if (
+      !Number.isFinite(report.currentPeriod.retentionRatePct) ||
+      report.currentPeriod.retentionRatePct < 0 ||
+      report.currentPeriod.retentionRatePct > 200
+    ) {
+      errors['currentPeriod.retentionRatePct'] =
+        'Retention rate must be between 0% and 200% (supports net revenue retention).';
+    }
+  }
+  if (report.currentPeriod.npsScore !== undefined) {
+    if (
+      !Number.isFinite(report.currentPeriod.npsScore) ||
+      report.currentPeriod.npsScore < -100 ||
+      report.currentPeriod.npsScore > 100
+    ) {
+      errors['currentPeriod.npsScore'] = 'NPS score must be between -100 and +100.';
+    }
+  }
+
   if (!Number.isFinite(report.previousPeriod.revenue) || report.previousPeriod.revenue < 0) {
     errors['previousPeriod.revenue'] = 'Previous revenue must be a non-negative number.';
   }
@@ -60,6 +83,26 @@ export function validateReportData(report: ReportInputData): ValidationResult {
     report.previousPeriod.customerCount < 0
   ) {
     errors['previousPeriod.customerCount'] = 'Previous customer count must be a non-negative number.';
+  }
+
+  if (report.previousPeriod.retentionRatePct !== undefined) {
+    if (
+      !Number.isFinite(report.previousPeriod.retentionRatePct) ||
+      report.previousPeriod.retentionRatePct < 0 ||
+      report.previousPeriod.retentionRatePct > 200
+    ) {
+      errors['previousPeriod.retentionRatePct'] =
+        'Previous retention rate must be between 0% and 200%.';
+    }
+  }
+  if (report.previousPeriod.npsScore !== undefined) {
+    if (
+      !Number.isFinite(report.previousPeriod.npsScore) ||
+      report.previousPeriod.npsScore < -100 ||
+      report.previousPeriod.npsScore > 100
+    ) {
+      errors['previousPeriod.npsScore'] = 'Previous NPS score must be between -100 and +100.';
+    }
   }
 
   if (report.monthlySeries.length < 2) {
@@ -111,6 +154,37 @@ export function validateReportData(report: ReportInputData): ValidationResult {
   if (report.strategicPriorities.length < 3 || report.strategicPriorities.length > 5) {
     warnings.push(
       `Executive reports perform best with 3 to 5 strategic priorities (currently ${report.strategicPriorities.length}).`
+    );
+  }
+
+  // Client Edition unredacted-prose advisory
+  const rawMetrics = computeReportMetrics(report);
+  const clientRedactionActive = report.audienceEdition === 'client';
+  const rawNarrativeHasConfTerms =
+    containsConfidentialFinancialReference(report.narrative.overview, report, rawMetrics) ||
+    containsConfidentialFinancialReference(report.narrative.achievements, report, rawMetrics) ||
+    containsConfidentialFinancialReference(report.narrative.challenges, report, rawMetrics) ||
+    containsConfidentialFinancialReference(report.narrative.closingTakeaway, report, rawMetrics);
+
+  if (clientRedactionActive && rawNarrativeHasConfTerms && !report.narrative.clientSummary?.trim()) {
+    warnings.push(
+      'Client Edition detected internal profit/cost terms in raw narrative prose; pre-render redaction will sanitize all exports automatically. Optionally add a dedicated Client Summary in Report Editor.'
+    );
+  }
+
+  // Custom accent contrast advisory (auto-compensated via accentInk)
+  const resolvedTheme = resolveBrandTheme(report);
+  const rawAccentSurfaceContrast = Math.min(
+    computeHexContrast(resolvedTheme.colors.accent, resolvedTheme.colors.surface),
+    computeHexContrast(resolvedTheme.colors.accent, resolvedTheme.colors.elevated)
+  );
+  const accentInkContrast = Math.min(
+    computeHexContrast(resolvedTheme.colors.accentInk, resolvedTheme.colors.surface),
+    computeHexContrast(resolvedTheme.colors.accentInk, resolvedTheme.colors.elevated)
+  );
+  if (rawAccentSurfaceContrast < 4.5) {
+    warnings.push(
+      `Accent color (${resolvedTheme.colors.accent}) raw contrast is ${rawAccentSurfaceContrast.toFixed(1)}:1 on surface; small text automatically uses WCAG AA accentInk (${resolvedTheme.colors.accentInk}, ${accentInkContrast.toFixed(1)}:1).`
     );
   }
 
@@ -175,17 +249,21 @@ export function validateReportData(report: ReportInputData): ValidationResult {
     },
     {
       id: 'core-numbers',
-      label: 'Period Financial Figures',
+      label: 'Period Financial & Customer Health Figures',
       status:
         errors['currentPeriod.revenue'] ||
         errors['currentPeriod.expenses'] ||
         errors['currentPeriod.customerCount'] ||
+        errors['currentPeriod.retentionRatePct'] ||
+        errors['currentPeriod.npsScore'] ||
         errors['previousPeriod.revenue'] ||
         errors['previousPeriod.expenses'] ||
-        errors['previousPeriod.customerCount']
+        errors['previousPeriod.customerCount'] ||
+        errors['previousPeriod.retentionRatePct'] ||
+        errors['previousPeriod.npsScore']
           ? 'fail'
           : 'pass',
-      detail: 'All current and comparison revenue, expense, and customer figures are valid.',
+      detail: 'All current and comparison revenue, expense, customer, retention, and NPS figures are valid.',
       sectionHint: 'financials',
     },
     {
@@ -266,14 +344,16 @@ export function validateReportData(report: ReportInputData): ValidationResult {
     },
     {
       id: 'brand-safety',
-      label: 'Brand Logo & Color Safety',
+      label: 'Brand Logo, Color Safety & WCAG AA Accent Ink',
       status:
         errors['branding.logoDataUrl'] ||
         errors['branding.primaryColor'] ||
         errors['branding.accentColor']
           ? 'fail'
-          : 'pass',
-      detail: 'Hex colors validated and embedded logo URI verified script-free.',
+          : accentInkContrast < 4.5
+            ? 'warn'
+            : 'pass',
+      detail: `Hex colors validated, embedded logo verified script-free, accentInk contrast ${accentInkContrast.toFixed(1)}:1.`,
       sectionHint: 'branding',
     },
   ];

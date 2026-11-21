@@ -5,23 +5,17 @@ import {
   defineElement,
   prop,
 } from '@hyper-elements/react';
-import { getAudienceEdition } from '../../core/audiences.ts';
-import {
-  formatCurrency,
-  formatNumber,
-  formatPercent,
-} from '../../core/calculations.ts';
-import { resolveBrandTheme } from '../../core/themes.ts';
-import { parsePayload } from './shared.ts';
+import { getThemeRadiusPx, resolveBrandTheme } from '../../core/themes.ts';
+import { parsePayload, resolveKpiStripCards } from './shared.ts';
 
 /**
- * 3. NexoraKpiStrip — Native 4- or 5-Column KPI Dashboard Strip (Client edition redacts expenses & profit)
+ * 3. NexoraKpiStrip — Native 4- or 5-Column Edition-Differentiated KPI Dashboard Strip
  */
 export const NexoraKpiStrip = defineElement({
   type: 'nexora.KpiStrip',
   label: 'NEXORA KPI Strip',
   description:
-    'Summary KPI grid across Revenue, Expenses, Net Profit, Profit Margin, and Customers with automatic Client-edition cost redaction.',
+    'Stakeholder-differentiated summary KPI strip across Board, CEO, Investor, Team, and redacted Client editions.',
   props: {
     payloadJson: prop.text({ label: 'Report Payload JSON', required: true }),
     target: prop.choice(['email', 'web', 'document', 'canvas'], {
@@ -41,76 +35,10 @@ export const NexoraKpiStrip = defineElement({
 
     const { report, metrics } = data;
     const theme = resolveBrandTheme(report);
-    const audience = getAudienceEdition(report.audienceEdition);
     const c = theme.colors;
-    const cur = report.currency;
     const compactMoney = target === 'email';
-
-    const cards = audience.redactInternalExpenses
-      ? [
-          {
-            label: 'Total Revenue',
-            val: formatCurrency(report.currentPeriod.revenue, cur, { compact: compactMoney }),
-            sub: `${formatPercent(metrics.revenueGrowthPct, { signed: true })} vs prior`,
-            positive: (metrics.revenueGrowthPct ?? 0) >= 0,
-          },
-          {
-            label: 'Active Customers',
-            val: formatNumber(report.currentPeriod.customerCount),
-            sub: `${formatPercent(metrics.customerGrowthPct, { signed: true })} growth`,
-            positive: (metrics.customerGrowthPct ?? 0) >= 0,
-          },
-          {
-            label: 'Revenue / Customer',
-            val:
-              metrics.revenuePerCustomer !== null
-                ? formatCurrency(metrics.revenuePerCustomer, cur)
-                : 'N/A',
-            sub: `${formatPercent(metrics.arpuGrowthPct, { signed: true })} expansion`,
-            positive: (metrics.arpuGrowthPct ?? 0) >= 0,
-          },
-          {
-            label: 'Partner Trajectory',
-            val: metrics.healthStatus,
-            sub:
-              report.currentPeriod.npsScore !== undefined
-                ? `NPS ${report.currentPeriod.npsScore}`
-                : report.reportingPeriod,
-            positive: true,
-          },
-        ]
-      : [
-          {
-            label: compactMoney ? 'Revenue' : 'Total Revenue',
-            val: formatCurrency(report.currentPeriod.revenue, cur, { compact: compactMoney }),
-            sub: `${formatPercent(metrics.revenueGrowthPct, { signed: true })} vs prior`,
-            positive: (metrics.revenueGrowthPct ?? 0) >= 0,
-          },
-          {
-            label: compactMoney ? 'Expenses' : 'Operating Expenses',
-            val: formatCurrency(report.currentPeriod.expenses, cur, { compact: compactMoney }),
-            sub: `${formatPercent(metrics.expenseGrowthPct, { signed: true })} vs prior`,
-            positive: (metrics.expenseGrowthPct ?? 0) <= (metrics.revenueGrowthPct ?? 0),
-          },
-          {
-            label: 'Net Profit',
-            val: formatCurrency(metrics.netProfit, cur, { compact: compactMoney }),
-            sub: `${formatPercent(metrics.profitGrowthPct, { signed: true })} vs prior`,
-            positive: metrics.netProfit >= 0 && (metrics.profitGrowthPct ?? 0) >= 0,
-          },
-          {
-            label: 'Profit Margin',
-            val: formatPercent(metrics.profitMarginPct),
-            sub: `${metrics.marginDeltaPts >= 0 ? '+' : ''}${metrics.marginDeltaPts.toFixed(1)} pts shift`,
-            positive: metrics.marginDeltaPts >= 0,
-          },
-          {
-            label: compactMoney ? 'Customers' : 'Active Customers',
-            val: formatNumber(report.currentPeriod.customerCount),
-            sub: `${formatPercent(metrics.customerGrowthPct, { signed: true })} growth`,
-            positive: (metrics.customerGrowthPct ?? 0) >= 0,
-          },
-        ];
+    const radius = getThemeRadiusPx(theme, 'md');
+    const cards = resolveKpiStripCards(report, metrics, compactMoney);
 
     return (
       <Grid
@@ -129,7 +57,7 @@ export const NexoraKpiStrip = defineElement({
                 bottom: { width: 1, style: 'solid', color: c.border },
                 left: { width: 1, style: 'solid', color: c.border },
               },
-              borderRadius: 8,
+              borderRadius: radius,
               padding: target === 'email' ? [12, 10] : [15, 14],
               gap: 6,
             }}

@@ -17,7 +17,7 @@ import {
 import { getAudienceEdition } from '../../core/audiences.ts';
 import { formatCurrency } from '../../core/calculations.ts';
 import { computeTrendAnalysis } from '../../core/intelligence.ts';
-import { resolveBrandTheme } from '../../core/themes.ts';
+import { getThemeRadiusPx, resolveBrandTheme } from '../../core/themes.ts';
 import { parsePayload } from './shared.ts';
 
 interface DashSegment {
@@ -89,10 +89,11 @@ export const NexoraTrendChart = defineElement({
     const cur = report.currency;
     const series = metrics.monthlyWithProfit;
     const redact = audience.redactInternalExpenses;
+    const radius = getThemeRadiusPx(theme, 'md');
 
     if (series.length === 0) {
       return (
-        <Column style={{ padding: 14, backgroundColor: c.surface, borderRadius: 8 }}>
+        <Column style={{ padding: 14, backgroundColor: c.surface, borderRadius: radius }}>
           <Text style={{ color: c.textMuted }}>No monthly financial series provided.</Text>
         </Column>
       );
@@ -109,7 +110,7 @@ export const NexoraTrendChart = defineElement({
           style={{
             backgroundColor: c.surface,
             border: { width: 1, style: 'solid', color: c.border },
-            borderRadius: 8,
+            borderRadius: radius,
             padding: [16, 18],
             gap: 10,
           }}
@@ -147,17 +148,25 @@ export const NexoraTrendChart = defineElement({
               </TableCell>
             </TableRow>
             {series.map((m) => {
-              const revBars = Math.max(1, Math.min(16, Math.round((m.revenue / maxVal) * 16)));
-              const expBars = Math.max(1, Math.min(16, Math.round((m.expenses / maxVal) * 16)));
+              const revBars =
+                m.revenue <= 0 ? 0 : Math.max(1, Math.min(16, Math.round((m.revenue / maxVal) * 16)));
+              const expBars =
+                m.expenses <= 0
+                  ? 0
+                  : Math.max(1, Math.min(16, Math.round((m.expenses / maxVal) * 16)));
               return (
                 <TableRow key={m.month}>
                   <TableCell style={{ fontFamily: theme.typography.monoFont, color: c.text }}>
                     {m.month}
                   </TableCell>
                   <TableCell style={{ fontFamily: theme.typography.monoFont, fontSize: 11 }}>
-                    <Span style={{ color: c.chartRevenue }}>{'█'.repeat(revBars)}</Span>
+                    <Span style={{ color: revBars > 0 ? c.chartRevenue : c.textMuted }}>
+                      {revBars > 0 ? '█'.repeat(revBars) : '—'}
+                    </Span>
                     {!redact ? (
-                      <Span style={{ color: c.chartExpense }}>{` / ${'▓'.repeat(expBars)}`}</Span>
+                      <Span style={{ color: expBars > 0 ? c.chartExpense : c.textMuted }}>
+                        {` / ${expBars > 0 ? '▓'.repeat(expBars) : '—'}`}
+                      </Span>
                     ) : null}
                   </TableCell>
                   <TableCell
@@ -205,7 +214,7 @@ export const NexoraTrendChart = defineElement({
     const zeroY = yForVal(0);
 
     const groupW = svgW / series.length;
-    const barW = Math.min(30, Math.max(10, groupW * (redact ? 0.42 : 0.28)));
+    const barW = Math.min(30, Math.max(8, groupW * (redact ? 0.42 : 0.28)));
 
     const gridYs = [0, 0.25, 0.5, 0.75, 1].map((r) => yForVal(minVal + valSpan * r));
     const yTickValues = [maxPositive, minVal + valSpan * 0.5, minVal];
@@ -228,12 +237,15 @@ export const NexoraTrendChart = defineElement({
       y2: profitCoords[idx + 1].y,
     }));
 
+    const revPeak = metrics.bestRevenueMonth ?? metrics.bestMonth;
+    const showDenseLabels = series.length > 6;
+
     return (
       <Column
         style={{
           backgroundColor: c.surface,
           border: { width: 1, style: 'solid', color: c.border },
-          borderRadius: 8,
+          borderRadius: radius,
           padding: [20, 22],
           gap: 14,
         }}
@@ -274,13 +286,13 @@ export const NexoraTrendChart = defineElement({
                 fontFamily: theme.typography.monoFont,
                 fontSize: 11,
                 color: c.textMuted,
-                textAlign: target === 'web' ? 'right' : 'right',
+                textAlign: 'right',
                 ...(target === 'web' ? { mobile: { textAlign: 'left' } } : {}),
               }}
             >
               <Span style={{ color: c.chartRevenue, fontWeight: 700 }}>■ Revenue</Span>
               {series.length > 1 ? (
-                <Span style={{ color: c.accent, fontWeight: 700 }}>{'  -- Rolling 3M Avg'}</Span>
+                <Span style={{ color: c.accentInk, fontWeight: 700 }}>{'  -- Rolling 3M Avg'}</Span>
               ) : null}
               {!redact ? (
                 <Span style={{ color: c.chartExpense, fontWeight: 700 }}>{'  ■ Expenses'}</Span>
@@ -298,7 +310,7 @@ export const NexoraTrendChart = defineElement({
               width: 64,
               flex: 'none',
               justifyContent: 'space-between',
-              padding: [6, 0],
+              padding: [Math.max(2, padTop - 4), 0, Math.max(2, padBottom - 4), 0],
             }}
           >
             {yTickValues.map((val, idx) => (
@@ -345,11 +357,11 @@ export const NexoraTrendChart = defineElement({
               ) : null}
 
               {series.map((m, idx) => {
+                const revVal = Math.max(0, m.revenue);
+                if (revVal <= 0) return null;
                 const cx = idx * groupW + groupW / 2;
-                const revTopY = yForVal(Math.max(0, m.revenue));
-                const expTopY = yForVal(Math.max(0, m.expenses));
+                const revTopY = yForVal(revVal);
                 const revH = Math.max(2, zeroY - revTopY);
-                const expH = Math.max(2, zeroY - expTopY);
 
                 if (redact) {
                   return (
@@ -380,8 +392,10 @@ export const NexoraTrendChart = defineElement({
 
               {!redact
                 ? series.map((m, idx) => {
+                    const expVal = Math.max(0, m.expenses);
+                    if (expVal <= 0) return null;
                     const cx = idx * groupW + groupW / 2;
-                    const expTopY = yForVal(Math.max(0, m.expenses));
+                    const expTopY = yForVal(expVal);
                     const expH = Math.max(2, zeroY - expTopY);
                     return (
                       <Rect
@@ -439,36 +453,38 @@ export const NexoraTrendChart = defineElement({
             </Svg>
 
             <Row stackOnMobile={false} style={{ gap: 2 }}>
-              {series.map((m) => (
-                <Column key={`lbl-${m.month}`} style={{ flex: 1, alignItems: 'center', gap: 1 }}>
+              {series.map((m, idx) => (
+                <Column key={`lbl-${m.month}-${idx}`} style={{ flex: 1, alignItems: 'center', gap: 1 }}>
                   <Text
                     style={{
                       fontFamily: theme.typography.monoFont,
-                      fontSize: 10,
+                      fontSize: showDenseLabels ? 9 : 10,
                       fontWeight: 700,
                       color: c.text,
                       textAlign: 'center',
                     }}
                   >
-                    {m.month}
+                    {showDenseLabels ? m.month.slice(0, 3) : m.month}
                   </Text>
-                  <Text
-                    style={{
-                      fontFamily: theme.typography.monoFont,
-                      fontSize: 9,
-                      color: c.textMuted,
-                      textAlign: 'center',
-                    }}
-                  >
-                    {formatCurrency(m.revenue, cur, { compact: true })}
-                  </Text>
+                  {series.length <= 8 ? (
+                    <Text
+                      style={{
+                        fontFamily: theme.typography.monoFont,
+                        fontSize: 9,
+                        color: c.textMuted,
+                        textAlign: 'center',
+                      }}
+                    >
+                      {formatCurrency(m.revenue, cur, { compact: true })}
+                    </Text>
+                  ) : null}
                 </Column>
               ))}
             </Row>
           </Column>
         </Row>
 
-        {metrics.bestMonth ? (
+        {revPeak ? (
           <Text
             style={{
               fontFamily: theme.typography.monoFont,
@@ -476,8 +492,8 @@ export const NexoraTrendChart = defineElement({
               color: c.textMuted,
             }}
           >
-            {`Peak month: ${metrics.bestMonth.month} (${formatCurrency(metrics.bestMonth.revenue, cur, { compact: true })})${
-              !redact
+            {`Peak revenue month: ${revPeak.month} (${formatCurrency(revPeak.revenue, cur, { compact: true })})${
+              !redact && metrics.bestMonth
                 ? ` · Best profit month: ${metrics.bestMonth.month} (${formatCurrency(metrics.bestMonth.netProfit, cur, { compact: true })})`
                 : ''
             }`}

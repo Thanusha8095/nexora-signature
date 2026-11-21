@@ -88,7 +88,7 @@ export function TrendAnalysisPanel({
       <div className="px-5 py-4 border-b border-slate-200 bg-slate-50/60 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span className="font-semibold uppercase tracking-wider text-[#0891B2]">
+            <span className="font-semibold uppercase tracking-wider text-[#0B6179]">
               Trend Analysis
             </span>
             <span aria-hidden="true">&middot;</span>
@@ -231,11 +231,12 @@ export function TrendAnalysisPanel({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {trend.rollingSeries.map((pt) => {
-            const actualWidth = Math.max(4, Math.round((pt.revenue / maxSeriesRev) * 100));
-            const rollingWidth = Math.max(
-              4,
-              Math.round((pt.rolling3MoRevenueAvg / maxSeriesRev) * 100)
-            );
+            const actualWidth =
+              pt.revenue > 0 ? Math.max(4, Math.round((pt.revenue / maxSeriesRev) * 100)) : 0;
+            const rollingWidth =
+              pt.rolling3MoRevenueAvg > 0
+                ? Math.max(4, Math.round((pt.rolling3MoRevenueAvg / maxSeriesRev) * 100))
+                : 0;
             const varianceStr = formatPercent(pt.revenueVsRollingPct, { signed: true });
             const isAbove = (pt.revenueVsRollingPct ?? 0) >= 0;
 
@@ -302,7 +303,7 @@ export function TrendAnalysisPanel({
         <button
           type="button"
           onClick={onEditMonthlySeries}
-          className="inline-flex items-center gap-1 font-semibold text-[#0891B2] hover:underline cursor-pointer whitespace-nowrap"
+          className="inline-flex items-center gap-1 font-semibold text-[#0B6179] hover:underline cursor-pointer whitespace-nowrap"
         >
           <span>Adjust Monthly Series</span>
           <ArrowRight className="h-3.5 w-3.5" />

@@ -7,21 +7,27 @@ import {
 import { toDesign, type Design } from '@hyper-elements/react/builder';
 import { getAudienceEdition } from '../core/audiences.ts';
 import {
-  computeReportMetrics,
   formatCurrency,
   formatNumber,
   formatPercent,
 } from '../core/calculations.ts';
 import {
   computeTrendAnalysis,
+  filterInsightsForAudience,
+  filterRecommendationsForAudience,
   filterTrendForAudience,
   generateExecutiveInsights,
   generateStrategicRecommendations,
 } from '../core/intelligence.ts';
+import { sanitizeReportForAudience } from '../core/redaction.ts';
 import { runWhatIfSimulation } from '../core/simulator.ts';
 import { resolveBrandTheme } from '../core/themes.ts';
 import type { ReportInputData } from '../core/types.ts';
-import { buildNexoraReportTree, type NexoraRootMode } from './NexoraReportDocument.tsx';
+import {
+  buildNexoraReportTree,
+  type BuildNexoraTreeOptions,
+  type NexoraRootMode,
+} from './NexoraReportDocument.tsx';
 
 function injectHeadMarkup(html: string, extraHead: string): string {
   if (!extraHead.trim()) return html;
@@ -52,25 +58,24 @@ export async function renderEmailHtml(report: ReportInputData): Promise<string> 
         .trim();
       return `<style${attrs}>${compactCss}</style>`;
     })
-    .replace(/>\s*\n\s*</g, '><')
-    .replace(/\n[ \t]+/g, ' ')
-    .replace(/[ \t]{2,}/g, ' ');
+    .replace(/>\s+</g, '><');
 }
 
 /**
- * 2. Plain-Text Email (via @hyper-elements/react async render().text + executive financial ledger)
+ * 2. Plain-Text Email (via @hyper-elements/react async render().text + stakeholder-ordered executive ledger)
  */
-export async function renderPlainTextEmail(report: ReportInputData): Promise<string> {
-  const element = buildNexoraReportTree(report, 'email');
+export async function renderPlainTextEmail(rawReport: ReportInputData): Promise<string> {
+  const element = buildNexoraReportTree(rawReport, 'email');
   const { text: hyperText } = await render(element);
-  const metrics = computeReportMetrics(report);
+  const { report, metrics, isRedacted: redact } = sanitizeReportForAudience(rawReport);
   const audience = getAudienceEdition(report.audienceEdition);
-  const trend = filterTrendForAudience(
-    computeTrendAnalysis(report, metrics),
-    audience.redactInternalExpenses
+  const trend = filterTrendForAudience(computeTrendAnalysis(report, metrics), redact);
+  const rawInsights = generateExecutiveInsights(report, metrics);
+  const insights = filterInsightsForAudience(rawInsights, trend, redact, audience.id);
+  const recommendations = filterRecommendationsForAudience(
+    generateStrategicRecommendations(report, metrics, rawInsights, audience.id),
+    redact
   );
-  const insights = generateExecutiveInsights(report, metrics);
-  const recommendations = generateStrategicRecommendations(report, metrics, insights);
   const cur = report.currency;
 
   const lines: string[] = [
@@ -82,10 +87,10 @@ export async function renderPlainTextEmail(report: ReportInputData): Promise<str
       : []),
     '========================================================================',
     '',
-    'KEY FINANCIAL SNAPSHOT',
-    '----------------------',
+    'KEY PERFORMANCE SNAPSHOT',
+    '------------------------',
     `Revenue:          ${formatCurrency(report.currentPeriod.revenue, cur)} (${formatPercent(metrics.revenueGrowthPct, { signed: true })} vs ${report.previousPeriodLabel})`,
-    ...(!audience.redactInternalExpenses
+    ...(!redact
       ? [
           `Expenses:         ${formatCurrency(report.currentPeriod.expenses, cur)} (${formatPercent(metrics.expenseGrowthPct, { signed: true })} vs ${report.previousPeriodLabel})`,
           `Net Profit:       ${formatCurrency(metrics.netProfit, cur)} (${formatPercent(metrics.profitGrowthPct, { signed: true })} vs ${report.previousPeriodLabel})`,
@@ -93,97 +98,142 @@ export async function renderPlainTextEmail(report: ReportInputData): Promise<str
         ]
       : ['[Internal cost structure omitted in Client & Partner Edition]']),
     `Customers:        ${formatNumber(report.currentPeriod.customerCount)} (${formatPercent(metrics.customerGrowthPct, { signed: true })})`,
-    `Business Health:  ${metrics.healthStatus}`,
-    '',
-    'EXECUTIVE SUMMARY',
-    '-----------------',
-    `Overview: ${report.narrative.overview}`,
-    `Achievements: ${report.narrative.achievements}`,
-    `Challenges: ${report.narrative.challenges}`,
-    '',
-    'MONTHLY PERFORMANCE',
-    '-------------------',
-    ...metrics.monthlyWithProfit.map((m) =>
-      audience.redactInternalExpenses
-        ? `  ${m.month.padEnd(12)} Rev: ${formatCurrency(m.revenue, cur).padStart(14)}`
-        : `  ${m.month.padEnd(12)} Rev: ${formatCurrency(m.revenue, cur).padStart(14)} | Exp: ${formatCurrency(m.expenses, cur).padStart(14)} | Net: ${formatCurrency(m.netProfit, cur).padStart(13)} (${formatPercent(m.marginPct)})`
-    ),
-    '',
-    'REVENUE MIX',
-    '-----------',
-    ...metrics.revenueCategoriesComputed.map(
-      (c) => `  - ${c.name}: ${formatCurrency(c.amount, cur)} (${c.sharePct.toFixed(1)}%)`
-    ),
-    ...(!audience.redactInternalExpenses
-      ? [
-          '',
-          'EXPENSE BREAKDOWN',
-          '-----------------',
-          ...metrics.expenseCategoriesComputed.map(
-            (c) => `  - ${c.name}: ${formatCurrency(c.amount, cur)} (${c.sharePct.toFixed(1)}%)`
-          ),
-        ]
+    ...(report.currentPeriod.retentionRatePct !== undefined
+      ? [`Retention Rate:   ${report.currentPeriod.retentionRatePct.toFixed(1)}%`]
       : []),
-    ...(audience.sectionOrder.includes('intelligence')
-      ? [
-          '',
-          ...(trend.hasSufficientData
-            ? [
-                `TREND ANALYSIS (CURRENT VS. ROLLING ${trend.windowMonthsCount < 3 ? `${trend.windowMonthsCount}-MONTH` : '3-MONTH'} AVG)`,
-                '----------------------------------------------',
-                `Window: ${trend.windowPeriodLabel} | Overall Momentum: [${trend.overallSignal}]`,
-                ...trend.metrics.map(
-                  (tm) =>
-                    `  - ${tm.label.padEnd(26)} ${trend.latestMonthLabel}: ${tm.currentMonthFormatted.padStart(12)} | Rolling Avg: ${tm.rolling3MoAvgFormatted.padStart(12)} | Delta: ${tm.deltaFormatted.padStart(8)} [${tm.signal}]`
-                ),
-                '',
-              ]
-            : []),
-          'VERIFIED FINANCIAL OBSERVATIONS',
-          '-------------------------------',
-          ...insights.map(
-            (ins, i) =>
-              `  ${i + 1}. [${ins.category}] ${ins.headline} (${ins.supportingMetric})\n     ${ins.explanation}${ins.ruleTriggered ? `\n     Rule: ${ins.ruleTriggered}` : ''}`
-          ),
-          '',
-          'ANALYTICAL RECOMMENDATIONS (Advisory)',
-          '-------------------------------------',
-          ...recommendations.map(
-            (rec, i) =>
-              `  ${i + 1}. [${rec.priority}] ${rec.title}\n     Action: ${rec.suggestedAction}`
-          ),
-        ]
+    ...(report.currentPeriod.npsScore !== undefined
+      ? [`Customer NPS:     ${report.currentPeriod.npsScore}`]
       : []),
-    '',
-    'LEADERSHIP STRATEGIC PRIORITIES',
-    '-------------------------------',
-    ...report.strategicPriorities.map(
-      (sp, i) => `  ${i + 1}. ${sp.title} (${sp.horizon} · Owner: ${sp.owner}) -> ${sp.targetImpact}`
-    ),
-    ...(report.simulation?.includeInReport && !audience.redactInternalExpenses
-      ? (() => {
-          const sim = runWhatIfSimulation(report, report.simulation!);
-          return [
-            '',
-            'HYPOTHETICAL WHAT-IF PROJECTION (NON-ACTUAL SCENARIO)',
-            '-----------------------------------------------------',
-            `Scenario: ${sim.assumptions.scenarioName}`,
-            `Projected Revenue:   ${formatCurrency(sim.projectedRevenue, cur)} (${formatCurrency(sim.revenueVariance, cur, { signed: true })} vs actual)`,
-            `Projected Expenses:  ${formatCurrency(sim.projectedExpenses, cur)} (${formatCurrency(sim.expenseVariance, cur, { signed: true })} vs actual)`,
-            `Projected Net Profit:${formatCurrency(sim.projectedNetProfit, cur)} (${formatCurrency(sim.netProfitVariance, cur, { signed: true })} vs actual)`,
-            `Projected Margin:    ${formatPercent(sim.projectedMarginPct)} (${sim.marginVariancePts >= 0 ? '+' : ''}${sim.marginVariancePts.toFixed(1)} pts vs actual)`,
-          ];
-        })()
-      : []),
-    '',
-    'CLOSING TAKEAWAY',
-    '----------------',
-    report.narrative.closingTakeaway,
+    redact
+      ? `Partner Trajectory: ${metrics.clientSafeTrajectory}`
+      : `Business Health:  ${metrics.healthStatus}`,
+  ];
+
+  const emittedSections = new Set<string>();
+  for (const key of audience.sectionOrder) {
+    if (emittedSections.has(key)) continue;
+    emittedSections.add(key);
+
+    if (key === 'summary') {
+      lines.push(
+        '',
+        audience.summaryHeading.toUpperCase(),
+        '-'.repeat(audience.summaryHeading.length),
+        `Overview: ${report.narrative.overview}`,
+        `${redact ? 'Partner Highlights' : 'Achievements'}: ${report.narrative.achievements}`,
+        `${redact ? 'Delivery Priorities' : 'Challenges'}: ${report.narrative.challenges}`
+      );
+    } else if (key === 'trends') {
+      lines.push(
+        '',
+        'MONTHLY PERFORMANCE',
+        '-------------------',
+        ...metrics.monthlyWithProfit.map((m) =>
+          redact
+            ? `  ${m.month.padEnd(12)} Rev: ${formatCurrency(m.revenue, cur).padStart(14)}`
+            : `  ${m.month.padEnd(12)} Rev: ${formatCurrency(m.revenue, cur).padStart(14)} | Exp: ${formatCurrency(m.expenses, cur).padStart(14)} | Net: ${formatCurrency(m.netProfit, cur).padStart(13)} (${formatPercent(m.marginPct)})`
+        )
+      );
+    } else if (key === 'breakdowns') {
+      lines.push(
+        '',
+        'REVENUE MIX',
+        '-----------',
+        ...metrics.revenueCategoriesComputed.map(
+          (c) => `  - ${c.name}: ${formatCurrency(c.amount, cur)} (${c.sharePct.toFixed(1)}%)`
+        ),
+        ...(!redact
+          ? [
+              '',
+              'EXPENSE BREAKDOWN',
+              '-----------------',
+              ...metrics.expenseCategoriesComputed.map(
+                (c) => `  - ${c.name}: ${formatCurrency(c.amount, cur)} (${c.sharePct.toFixed(1)}%)`
+              ),
+            ]
+          : [])
+      );
+    } else if (key === 'segments' && metrics.segmentsComputed.length > 0) {
+      lines.push(
+        '',
+        redact ? 'PARTNER SEGMENT REACH' : 'SEGMENT PERFORMANCE',
+        '-------------------',
+        ...metrics.segmentsComputed.map((seg) =>
+          redact
+            ? `  - ${seg.name}: ${formatCurrency(seg.revenue, cur)} (${seg.sharePct.toFixed(1)}% · YoP ${formatPercent(seg.growthPct, { signed: true })})`
+            : `  - ${seg.name}: ${formatCurrency(seg.revenue, cur)} (${seg.sharePct.toFixed(1)}% · YoP ${formatPercent(seg.growthPct, { signed: true })} · Margin ${seg.marginPct.toFixed(1)}%)`
+        )
+      );
+    } else if (key === 'intelligence' && !redact) {
+      lines.push(
+        '',
+        ...(trend.hasSufficientData
+          ? [
+              `TREND ANALYSIS (CURRENT VS. ROLLING ${trend.windowMonthsCount < 3 ? `${trend.windowMonthsCount}-MONTH` : '3-MONTH'} AVG)`,
+              '----------------------------------------------',
+              `Window: ${trend.windowPeriodLabel} | Overall Momentum: [${trend.overallSignal}]`,
+              ...trend.metrics.map(
+                (tm) =>
+                  `  - ${tm.label.padEnd(26)} ${trend.latestMonthLabel}: ${tm.currentMonthFormatted.padStart(12)} | Rolling Avg: ${tm.rolling3MoAvgFormatted.padStart(12)} | Delta: ${tm.deltaFormatted.padStart(8)} [${tm.signal}]`
+              ),
+              '',
+            ]
+          : []),
+        'VERIFIED FINANCIAL OBSERVATIONS',
+        '-------------------------------',
+        ...insights.map(
+          (ins, i) =>
+            `  ${i + 1}. [${ins.category}] ${ins.headline} (${ins.supportingMetric})\n     ${ins.explanation}${ins.ruleTriggered ? `\n     Rule: ${ins.ruleTriggered}` : ''}`
+        ),
+        '',
+        'ANALYTICAL RECOMMENDATIONS (Advisory)',
+        '-------------------------------------',
+        ...recommendations.map(
+          (rec, i) =>
+            `  ${i + 1}. [${rec.priority}] ${rec.title}\n     Action: ${rec.suggestedAction}`
+        )
+      );
+    } else if (key === 'priorities' && report.strategicPriorities.length > 0) {
+      lines.push(
+        '',
+        audience.prioritiesHeading.toUpperCase(),
+        '-'.repeat(audience.prioritiesHeading.length),
+        ...report.strategicPriorities.map((sp, i) =>
+          redact
+            ? `  ${i + 1}. ${sp.title} (${sp.horizon}) -> ${sp.targetImpact}`
+            : `  ${i + 1}. ${sp.title} (${sp.horizon} · Owner: ${sp.owner}) -> ${sp.targetImpact}`
+        )
+      );
+    } else if (key === 'simulation' && report.simulation?.includeInReport && !redact) {
+      const sim = runWhatIfSimulation(report, report.simulation);
+      lines.push(
+        '',
+        'HYPOTHETICAL WHAT-IF PROJECTION (NON-ACTUAL SCENARIO)',
+        '-----------------------------------------------------',
+        `Scenario: ${sim.assumptions.scenarioName}`,
+        `Projected Revenue:   ${formatCurrency(sim.projectedRevenue, cur)} (${formatCurrency(sim.revenueVariance, cur, { signed: true })} vs actual; ${sim.impliedRevenueDeltaPct >= 0 ? '+' : ''}${sim.impliedRevenueDeltaPct.toFixed(1)}%)`,
+        `Projected Expenses:  ${formatCurrency(sim.projectedExpenses, cur)} (${formatCurrency(sim.expenseVariance, cur, { signed: true })} vs actual)`,
+        `Projected Net Profit:${formatCurrency(sim.projectedNetProfit, cur)} (${formatCurrency(sim.netProfitVariance, cur, { signed: true })} vs actual)`,
+        `Projected Margin:    ${formatPercent(sim.projectedMarginPct)} (${sim.marginVariancePts >= 0 ? '+' : ''}${sim.marginVariancePts.toFixed(1)} pts vs actual)`,
+        `Projected Customers: ${formatNumber(sim.projectedCustomers)} (${sim.customerVariance >= 0 ? '+' : ''}${formatNumber(sim.customerVariance)} vs actual)`,
+        `Projected ARPU:      ${sim.projectedArpu !== null ? formatCurrency(sim.projectedArpu, cur) : 'N/A'}`
+      );
+    } else if (key === 'closing') {
+      lines.push(
+        '',
+        audience.closingHeading.toUpperCase(),
+        '-'.repeat(audience.closingHeading.length),
+        report.narrative.closingTakeaway
+      );
+    }
+  }
+
+  lines.push(
     '',
     '------------------------------------------------------------------------',
     `${report.branding.companyName} | ${report.branding.preparedBy} | ${report.branding.contactEmail}`,
-    ...(audience.showGovernanceDisclaimer ? [report.branding.disclaimer] : []),
-  ];
+    ...(audience.showGovernanceDisclaimer ? [report.branding.disclaimer] : [])
+  );
 
   void hyperText;
   return lines.join('\n');
@@ -201,9 +251,12 @@ export async function renderWebHtml(report: ReportInputData): Promise<string> {
 /**
  * 4. Print-Ready Document HTML for Playwright A4 PDF & Browser Print Preview (via @hyper-elements/react <Document> + async render())
  */
-export async function renderPrintDocumentHtml(report: ReportInputData): Promise<string> {
+export async function renderPrintDocumentHtml(
+  report: ReportInputData,
+  options?: BuildNexoraTreeOptions
+): Promise<string> {
   const theme = resolveBrandTheme(report);
-  const element = buildNexoraReportTree(report, 'document');
+  const element = buildNexoraReportTree(report, 'document', options);
   const { html } = await render(element);
 
   const printCss = `
@@ -211,12 +264,16 @@ export async function renderPrintDocumentHtml(report: ReportInputData): Promise<
     <style>
       @page {
         size: A4 portrait;
-        margin: 14mm 12mm 16mm 12mm;
+        margin: 16mm 12mm 16mm 12mm;
       }
       html, body {
         background-color: ${theme.colors.canvas} !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+      }
+      h1, h2, h3 {
+        break-after: avoid;
+        page-break-after: avoid;
       }
       table, tr {
         break-inside: avoid;

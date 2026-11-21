@@ -1,10 +1,13 @@
+import { useEffect, useState } from 'react';
 import { AlertCircle, RotateCcw, ShieldCheck, Sliders } from 'lucide-react';
 import { getAudienceEdition } from '../core/audiences.ts';
 import { formatCurrency, formatNumber, formatPercent } from '../core/calculations.ts';
 import {
+  computeCombinedRevenueDeltaPct,
   DEFAULT_SIMULATION_ASSUMPTIONS,
   runWhatIfSimulation,
   SIMULATION_PRESETS,
+  solveArpuDeltaFromRevenueAndCustomers,
 } from '../core/simulator.ts';
 import type { ReportInputData, SimulationAssumptions } from '../core/types.ts';
 
@@ -14,6 +17,62 @@ interface SimulatorViewProps {
   onOpenPreview: () => void;
 }
 
+interface DraftPercentInputProps {
+  id: string;
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (next: number) => void;
+}
+
+function DraftPercentInput({ id, value, min, max, onCommit }: DraftPercentInputProps) {
+  const [draft, setDraft] = useState<string>(String(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) {
+      setDraft(String(value));
+    }
+  }, [value, focused]);
+
+  const clampAndCommit = (raw: string) => {
+    const trimmed = raw.trim();
+    const parsed = Number(trimmed);
+    if (trimmed === '' || trimmed === '-' || !Number.isFinite(parsed)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = Number(Math.max(min, Math.min(max, parsed)).toFixed(1));
+    setDraft(String(clamped));
+    onCommit(clamped);
+  };
+
+  return (
+    <input
+      aria-labelledby={id}
+      type="text"
+      inputMode="decimal"
+      value={draft}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => {
+        const raw = e.target.value;
+        setDraft(raw);
+        if (raw.trim() !== '' && raw.trim() !== '-' && raw.trim() !== '.') {
+          const parsed = Number(raw);
+          if (Number.isFinite(parsed)) {
+            onCommit(Number(Math.max(min, Math.min(max, parsed)).toFixed(1)));
+          }
+        }
+      }}
+      onBlur={() => {
+        setFocused(false);
+        clampAndCommit(draft);
+      }}
+      className="w-16 rounded border border-slate-300 px-2 py-1 text-right font-mono-num text-xs text-[#0B1120]"
+    />
+  );
+}
+
 export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorViewProps) {
   const assumptions: SimulationAssumptions =
     report.simulation ?? DEFAULT_SIMULATION_ASSUMPTIONS;
@@ -21,62 +80,110 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
   const audience = getAudienceEdition(report.audienceEdition);
   const cur = report.currency;
 
-  const updateSimulation = (patch: Partial<SimulationAssumptions>) => {
+  const commitAssumptions = (nextAssumptions: SimulationAssumptions) => {
     onChange({
       ...report,
-      simulation: {
-        ...assumptions,
-        ...patch,
-      },
+      simulation: nextAssumptions,
       updatedAt: new Date().toISOString(),
+    });
+  };
+
+  const handleLeverChange = (
+    key: 'revenueDeltaPct' | 'expenseDeltaPct' | 'customerDeltaPct' | 'arpuDeltaPct',
+    nextVal: number
+  ) => {
+    const safeVal = Number.isFinite(nextVal) ? nextVal : 0;
+    if (key === 'customerDeltaPct') {
+      const combinedRev = computeCombinedRevenueDeltaPct(safeVal, assumptions.arpuDeltaPct);
+      commitAssumptions({
+        ...assumptions,
+        customerDeltaPct: safeVal,
+        revenueDeltaPct: combinedRev,
+      });
+      return;
+    }
+    if (key === 'arpuDeltaPct') {
+      const combinedRev = computeCombinedRevenueDeltaPct(assumptions.customerDeltaPct, safeVal);
+      commitAssumptions({
+        ...assumptions,
+        arpuDeltaPct: safeVal,
+        revenueDeltaPct: combinedRev,
+      });
+      return;
+    }
+    if (key === 'revenueDeltaPct') {
+      const solvedArpu = solveArpuDeltaFromRevenueAndCustomers(
+        safeVal,
+        assumptions.customerDeltaPct
+      );
+      commitAssumptions({
+        ...assumptions,
+        revenueDeltaPct: safeVal,
+        arpuDeltaPct: solvedArpu,
+      });
+      return;
+    }
+    commitAssumptions({
+      ...assumptions,
+      expenseDeltaPct: safeVal,
     });
   };
 
   const applyPreset = (presetAssumptions: SimulationAssumptions) => {
-    onChange({
-      ...report,
-      simulation: {
-        ...presetAssumptions,
-        includeInReport: assumptions.includeInReport ?? false,
-      },
-      updatedAt: new Date().toISOString(),
+    commitAssumptions({
+      ...presetAssumptions,
+      revenueDeltaPct: computeCombinedRevenueDeltaPct(
+        presetAssumptions.customerDeltaPct,
+        presetAssumptions.arpuDeltaPct
+      ),
+      includeInReport: assumptions.includeInReport ?? false,
     });
   };
 
   const sliderConfigs: {
-    key: 'revenueDeltaPct' | 'expenseDeltaPct' | 'customerDeltaPct' | 'arpuDeltaPct';
+    key: 'customerDeltaPct' | 'arpuDeltaPct' | 'revenueDeltaPct' | 'expenseDeltaPct';
     label: string;
     hint: string;
     min: number;
     max: number;
+    step: number;
+    value: number;
   }[] = [
-    {
-      key: 'revenueDeltaPct',
-      label: 'Volume / Top-Line Growth Assumption',
-      hint: 'Hypothetical demand & volume shift (%)',
-      min: -40,
-      max: 60,
-    },
-    {
-      key: 'expenseDeltaPct',
-      label: 'Operating Expense Shift Assumption',
-      hint: 'Cost expansion (+) or discipline (-%)',
-      min: -35,
-      max: 50,
-    },
     {
       key: 'customerDeltaPct',
       label: 'Active Customer Base Shift',
-      hint: 'Customer acquisition or churn impact (%)',
+      hint: 'Drives projected customers and compounds top-line scale (%)',
       min: -30,
       max: 60,
+      step: 1,
+      value: assumptions.customerDeltaPct,
     },
     {
       key: 'arpuDeltaPct',
       label: 'Pricing / ARPU Uplift Assumption',
-      hint: 'Compounds top-line revenue via pricing power (%)',
+      hint: 'Adjusts revenue per customer without double-counting volume (%)',
       min: -25,
       max: 40,
+      step: 1,
+      value: assumptions.arpuDeltaPct,
+    },
+    {
+      key: 'revenueDeltaPct',
+      label: 'Implied Total Revenue Growth',
+      hint: 'Linked to Customers × ARPU — dragging adjusts implied ARPU shift (%)',
+      min: -45,
+      max: 100,
+      step: 0.5,
+      value: projection.impliedRevenueDeltaPct,
+    },
+    {
+      key: 'expenseDeltaPct',
+      label: 'Operating Expense Shift Assumption',
+      hint: 'Cost expansion (+) or operating discipline (-%)',
+      min: -35,
+      max: 50,
+      step: 1,
+      value: assumptions.expenseDeltaPct,
     },
   ];
 
@@ -91,10 +198,7 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
   const plotW = svgW - padL - padR;
   const plotH = svgH - padT - padB;
   const maxVal =
-    Math.max(
-      ...series.flatMap((m) => [m.actualRevenue, m.projectedRevenue]),
-      1
-    ) * 1.12;
+    Math.max(...series.flatMap((m) => [m.actualRevenue, m.projectedRevenue]), 1) * 1.12;
   const groupW = series.length > 0 ? plotW / series.length : plotW;
   const barW = Math.min(26, Math.max(10, groupW * 0.28));
 
@@ -102,15 +206,16 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
     <div className="space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-5 border-b border-slate-200">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-amber-700">
+          <div className="text-xs font-semibold uppercase tracking-wider text-amber-800">
             Hypothetical Projection Sandbox · Non-Actual Modeling
           </div>
           <h1 className="font-display text-2xl lg:text-3xl font-semibold text-[#0B1120] mt-1">
             What-If Business Simulator
           </h1>
           <p className="text-xs text-slate-600 mt-1 max-w-2xl">
-            Test revenue, operating cost, customer growth, and pricing levers instantaneously.
-            Reported period actuals in your ledger remain untouched.
+            Model customer growth, ARPU pricing power, and expense leverage under the unified
+            identity Projected Revenue = Projected Customers &times; Projected ARPU. Reported actuals
+            remain untouched.
           </p>
         </div>
 
@@ -147,7 +252,9 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
           <input
             type="checkbox"
             checked={Boolean(assumptions.includeInReport)}
-            onChange={(e) => updateSimulation({ includeInReport: e.target.checked })}
+            onChange={(e) =>
+              commitAssumptions({ ...assumptions, includeInReport: e.target.checked })
+            }
             className="h-4 w-4 rounded border-slate-400 text-[#0B1120]"
           />
           <span>Attach Labeled Appendix to Exports</span>
@@ -157,7 +264,7 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
       {/* Client Edition Guardrail Notice */}
       {audience.redactInternalExpenses ? (
         <div className="rounded-xl border border-cyan-300 bg-cyan-50 px-5 py-3 flex items-start gap-2.5 text-xs text-cyan-950">
-          <ShieldCheck className="h-4 w-4 text-[#0891B2] shrink-0 mt-0.5" />
+          <ShieldCheck className="h-4 w-4 text-[#0B6179] shrink-0 mt-0.5" />
           <div>
             <span className="font-semibold">Client &amp; Partner Edition Active: </span>
             Internal operating expenses, net profit, and What-If projection appendices are
@@ -199,7 +306,7 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
         {/* Controls */}
         <div className="lg:col-span-5 rounded-xl border border-slate-200 bg-white p-6 space-y-5">
           <div className="flex items-center gap-2">
-            <Sliders className="h-4 w-4 text-[#0891B2]" />
+            <Sliders className="h-4 w-4 text-[#0B6179]" />
             <h2 className="font-display text-lg font-semibold text-[#0B1120]">
               Assumption Levers
             </h2>
@@ -212,49 +319,48 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
             <input
               type="text"
               value={assumptions.scenarioName}
-              onChange={(e) => updateSimulation({ scenarioName: e.target.value })}
+              onChange={(e) =>
+                commitAssumptions({ ...assumptions, scenarioName: e.target.value })
+              }
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-[#0B1120]"
             />
           </div>
 
           <div className="space-y-4">
-            {sliderConfigs.map((cfg) => {
-              const val = assumptions[cfg.key];
-              return (
-                <div key={cfg.key} className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <label htmlFor={`sim-${cfg.key}`} className="text-xs font-semibold text-[#0B1120]">
-                      {cfg.label}
-                    </label>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="number"
-                        min={cfg.min}
-                        max={cfg.max}
-                        step={1}
-                        value={val}
-                        onChange={(e) =>
-                          updateSimulation({ [cfg.key]: Number(e.target.value) || 0 })
-                        }
-                        className="w-16 rounded border border-slate-300 px-2 py-1 text-right font-mono-num text-xs text-[#0B1120]"
-                      />
-                      <span className="font-mono-num text-xs text-slate-500">%</span>
-                    </div>
+            {sliderConfigs.map((cfg) => (
+              <div key={cfg.key} className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label
+                    id={`sim-label-${cfg.key}`}
+                    htmlFor={`sim-${cfg.key}`}
+                    className="text-xs font-semibold text-[#0B1120]"
+                  >
+                    {cfg.label}
+                  </label>
+                  <div className="flex items-center gap-1">
+                    <DraftPercentInput
+                      id={`sim-label-${cfg.key}`}
+                      value={cfg.value}
+                      min={cfg.min}
+                      max={cfg.max}
+                      onCommit={(nextVal) => handleLeverChange(cfg.key, nextVal)}
+                    />
+                    <span className="font-mono-num text-xs text-slate-500">%</span>
                   </div>
-                  <input
-                    id={`sim-${cfg.key}`}
-                    type="range"
-                    min={cfg.min}
-                    max={cfg.max}
-                    step={1}
-                    value={val}
-                    onChange={(e) => updateSimulation({ [cfg.key]: Number(e.target.value) })}
-                    className="w-full accent-[#0B1120] cursor-pointer"
-                  />
-                  <div className="text-[11px] text-slate-500">{cfg.hint}</div>
                 </div>
-              );
-            })}
+                <input
+                  id={`sim-${cfg.key}`}
+                  type="range"
+                  min={cfg.min}
+                  max={cfg.max}
+                  step={cfg.step}
+                  value={cfg.value}
+                  onChange={(e) => handleLeverChange(cfg.key, Number(e.target.value))}
+                  className="w-full accent-[#0B1120] cursor-pointer"
+                />
+                <div className="text-[11px] text-slate-500">{cfg.hint}</div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -262,7 +368,7 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
         <div className="lg:col-span-7 space-y-5">
           {/* Projected KPI Grid */}
           <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-semibold text-[#0B1120]">
                 Projected Outcomes vs. Reported Actuals
               </span>
@@ -308,7 +414,7 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
                     </td>
                     <td
                       className={`py-3 px-5 text-right font-mono-num font-semibold ${
-                        projection.expenseVariance <= 0 ? 'text-emerald-700' : 'text-amber-700'
+                        projection.expenseVariance <= 0 ? 'text-emerald-700' : 'text-amber-800'
                       }`}
                     >
                       {formatCurrency(projection.expenseVariance, cur, { signed: true })}
@@ -358,6 +464,28 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
                     <td className="py-3 px-5 text-right font-mono-num font-semibold text-slate-700">
                       {projection.customerVariance >= 0 ? '+' : ''}
                       {formatNumber(projection.customerVariance)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-3 px-5 font-semibold text-[#0B1120]">ARPU (Revenue / Customer)</td>
+                    <td className="py-3 px-4 text-right font-mono-num text-slate-600">
+                      {projection.actualArpu !== null
+                        ? formatCurrency(projection.actualArpu, cur)
+                        : 'N/A'}
+                    </td>
+                    <td className="py-3 px-4 text-right font-mono-num font-semibold text-[#0B1120]">
+                      {projection.projectedArpu !== null
+                        ? formatCurrency(projection.projectedArpu, cur)
+                        : 'N/A'}
+                    </td>
+                    <td
+                      className={`py-3 px-5 text-right font-mono-num font-semibold ${
+                        (projection.arpuVariance ?? 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                      }`}
+                    >
+                      {projection.arpuVariance !== null
+                        ? formatCurrency(projection.arpuVariance, cur, { signed: true })
+                        : 'N/A'}
                     </td>
                   </tr>
                 </tbody>
@@ -423,26 +551,31 @@ export function SimulatorView({ report, onChange, onOpenPreview }: SimulatorView
 
               {series.map((m, idx) => {
                 const cx = padL + idx * groupW + groupW / 2;
-                const actH = (m.actualRevenue / maxVal) * plotH;
-                const projH = (m.projectedRevenue / maxVal) * plotH;
+                const actH = m.actualRevenue > 0 ? Math.max(2, (m.actualRevenue / maxVal) * plotH) : 0;
+                const projH =
+                  m.projectedRevenue > 0 ? Math.max(2, (m.projectedRevenue / maxVal) * plotH) : 0;
                 return (
                   <g key={m.month}>
-                    <rect
-                      x={cx - barW - 2}
-                      y={padT + plotH - actH}
-                      width={barW}
-                      height={Math.max(2, actH)}
-                      rx={3}
-                      fill="#94A3B8"
-                    />
-                    <rect
-                      x={cx + 2}
-                      y={padT + plotH - projH}
-                      width={barW}
-                      height={Math.max(2, projH)}
-                      rx={3}
-                      fill="#0891B2"
-                    />
+                    {actH > 0 ? (
+                      <rect
+                        x={cx - barW - 2}
+                        y={padT + plotH - actH}
+                        width={barW}
+                        height={actH}
+                        rx={3}
+                        fill="#94A3B8"
+                      />
+                    ) : null}
+                    {projH > 0 ? (
+                      <rect
+                        x={cx + 2}
+                        y={padT + plotH - projH}
+                        width={barW}
+                        height={projH}
+                        rx={3}
+                        fill="#0891B2"
+                      />
+                    ) : null}
                     <text
                       x={cx}
                       y={svgH - 10}

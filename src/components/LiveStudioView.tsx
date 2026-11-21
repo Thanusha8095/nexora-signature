@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Columns, Download, Loader2, Monitor, Presentation, RefreshCw, Smartphone } from 'lucide-react';
 import { AUDIENCE_EDITION_LIST } from '../core/audiences.ts';
 import { scoreReportExports, type ExportQualityScorecard } from '../core/exportQuality.ts';
-import { THEME_LIST } from '../core/themes.ts';
+import { applyThemePresetToReport, THEME_LIST } from '../core/themes.ts';
 import type {
   AudienceEditionId,
   PreviewMode,
@@ -177,11 +177,7 @@ export function LiveStudioView({
     void Promise.all(
       THEME_LIST.map(async (t) => ({
         theme: t,
-        html: await renderWebHtml({
-          ...report,
-          theme: t.id,
-          branding: { ...report.branding, accentColor: t.colors.accent },
-        }),
+        html: await renderWebHtml(applyThemePresetToReport(report, t.id)),
       }))
     )
       .then((results) => {
@@ -278,7 +274,7 @@ export function LiveStudioView({
             onClick={onOpenPresentation}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-[#0B1120] text-xs font-semibold hover:bg-slate-50 transition-colors cursor-pointer whitespace-nowrap"
           >
-            <Presentation className="h-3.5 w-3.5 text-[#0891B2]" />
+            <Presentation className="h-3.5 w-3.5 text-[#0B6179]" />
             <span>Present</span>
           </button>
 
@@ -398,7 +394,7 @@ export function LiveStudioView({
 
                 {binaryLoading === activeBinaryKind ? (
                   <div className="h-[640px] bg-white rounded-lg border border-slate-300 flex flex-col items-center justify-center gap-2 text-xs text-slate-600">
-                    <Loader2 className="h-6 w-6 animate-spin text-[#0891B2]" />
+                    <Loader2 className="h-6 w-6 animate-spin text-[#0B6179]" />
                     <span>
                       {previewMode === 'native-pdf'
                         ? 'Compiling native @hyper-elements/react/pdf Document...'
@@ -456,7 +452,7 @@ export function LiveStudioView({
 
                 {binaryLoading === activeBinaryKind ? (
                   <div className="h-[640px] bg-white rounded-lg border border-slate-300 flex flex-col items-center justify-center gap-2 text-xs text-slate-600">
-                    <Loader2 className="h-6 w-6 animate-spin text-[#0891B2]" />
+                    <Loader2 className="h-6 w-6 animate-spin text-[#0B6179]" />
                     <span>
                       {previewMode === 'canvas-png'
                         ? 'Rasterizing <Canvas 1200×800> at 2x via @hyper-elements/react/image...'

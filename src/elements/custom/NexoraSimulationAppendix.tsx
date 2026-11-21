@@ -10,9 +10,9 @@ import {
   prop,
 } from '@hyper-elements/react';
 import { getAudienceEdition } from '../../core/audiences.ts';
-import { formatCurrency, formatPercent } from '../../core/calculations.ts';
+import { formatCurrency, formatNumber, formatPercent } from '../../core/calculations.ts';
 import { runWhatIfSimulation } from '../../core/simulator.ts';
-import { resolveBrandTheme } from '../../core/themes.ts';
+import { getThemeRadiusPx, resolveBrandTheme } from '../../core/themes.ts';
 import { parsePayload } from './shared.ts';
 
 /**
@@ -51,13 +51,14 @@ export const NexoraSimulationAppendix = defineElement({
     const c = theme.colors;
     const cur = report.currency;
     const isCompact = target === 'email' || target === 'canvas';
+    const radius = getThemeRadiusPx(theme, 'md');
 
     const rows = [
       {
         label: 'Revenue (Simulated)',
         actual: formatCurrency(sim.actualRevenue, cur, { compact: isCompact }),
         projected: formatCurrency(sim.projectedRevenue, cur, { compact: isCompact }),
-        variance: formatCurrency(sim.revenueVariance, cur, { signed: true, compact: isCompact }),
+        variance: `${formatCurrency(sim.revenueVariance, cur, { signed: true, compact: isCompact })} (${sim.impliedRevenueDeltaPct >= 0 ? '+' : ''}${sim.impliedRevenueDeltaPct.toFixed(1)}%)`,
       },
       {
         label: 'Operating Expenses (Simulated)',
@@ -77,9 +78,24 @@ export const NexoraSimulationAppendix = defineElement({
         projected: formatPercent(sim.projectedMarginPct),
         variance: `${sim.marginVariancePts >= 0 ? '+' : ''}${sim.marginVariancePts.toFixed(1)} pts`,
       },
+      {
+        label: 'Active Customers (Simulated)',
+        actual: formatNumber(sim.actualCustomers),
+        projected: formatNumber(sim.projectedCustomers),
+        variance: `${sim.customerVariance >= 0 ? '+' : ''}${formatNumber(sim.customerVariance)}`,
+      },
+      {
+        label: 'ARPU (Rev / Customer)',
+        actual: sim.actualArpu !== null ? formatCurrency(sim.actualArpu, cur) : 'N/A',
+        projected: sim.projectedArpu !== null ? formatCurrency(sim.projectedArpu, cur) : 'N/A',
+        variance:
+          sim.arpuVariance !== null
+            ? formatCurrency(sim.arpuVariance, cur, { signed: true })
+            : 'N/A',
+      },
     ];
 
-    const assumptionsText = `Assumptions: Rev ${sim.assumptions.revenueDeltaPct >= 0 ? '+' : ''}${sim.assumptions.revenueDeltaPct}% · OpEx ${sim.assumptions.expenseDeltaPct >= 0 ? '+' : ''}${sim.assumptions.expenseDeltaPct}% · Cust ${sim.assumptions.customerDeltaPct >= 0 ? '+' : ''}${sim.assumptions.customerDeltaPct}% · ARPU ${sim.assumptions.arpuDeltaPct >= 0 ? '+' : ''}${sim.assumptions.arpuDeltaPct}%`;
+    const assumptionsText = `Drivers: Customers ${sim.assumptions.customerDeltaPct >= 0 ? '+' : ''}${sim.assumptions.customerDeltaPct}% · ARPU ${sim.assumptions.arpuDeltaPct >= 0 ? '+' : ''}${sim.assumptions.arpuDeltaPct}% · Implied Rev ${sim.impliedRevenueDeltaPct >= 0 ? '+' : ''}${sim.impliedRevenueDeltaPct.toFixed(1)}% · OpEx ${sim.assumptions.expenseDeltaPct >= 0 ? '+' : ''}${sim.assumptions.expenseDeltaPct}%`;
 
     const simFont = target === 'email' ? 'monospace' : theme.typography.monoFont;
 
@@ -88,7 +104,7 @@ export const NexoraSimulationAppendix = defineElement({
         style={{
           backgroundColor: c.warningBg,
           border: { width: 1, style: 'dashed', color: c.warning },
-          borderRadius: 8,
+          borderRadius: radius,
           padding: isCompact ? [18, 18] : [22, 24],
           gap: 12,
         }}
@@ -140,7 +156,7 @@ export const NexoraSimulationAppendix = defineElement({
             color: c.textMuted,
           }}
         >
-          Figures below are forward-looking model projections computed from user-defined assumptions and are strictly separated from audited period actuals above.
+          Figures below satisfy Projected Revenue = Projected Customers × Projected ARPU from user-defined assumptions and are strictly separated from audited period actuals above.
         </Text>
 
         <Table
@@ -184,7 +200,7 @@ export const NexoraSimulationAppendix = defineElement({
                   textAlign: 'right',
                   fontFamily: simFont,
                   fontWeight: 700,
-                  color: c.accent,
+                  color: c.accentInk,
                 }}
               >
                 {r.variance}

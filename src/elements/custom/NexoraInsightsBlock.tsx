@@ -15,7 +15,7 @@ import {
 } from '@hyper-elements/react';
 import { getAudienceEdition } from '../../core/audiences.ts';
 import { computeTrendAnalysis, filterTrendForAudience } from '../../core/intelligence.ts';
-import { resolveBrandTheme } from '../../core/themes.ts';
+import { getThemeRadiusPx, resolveBrandTheme } from '../../core/themes.ts';
 import { parsePayload, signalHexColor, signalSymbol } from './shared.ts';
 
 /**
@@ -53,12 +53,26 @@ export const NexoraInsightsBlock = defineElement({
     const theme = resolveBrandTheme(report);
     const audience = getAudienceEdition(report.audienceEdition);
     const c = theme.colors;
+    const radius = getThemeRadiusPx(theme, 'md');
     const rawTrend = data.trendAnalysis ?? computeTrendAnalysis(report, metrics);
     const trend = filterTrendForAudience(rawTrend, audience.redactInternalExpenses);
     const windowLabel = trend.windowMonthsCount < 3 ? `${trend.windowMonthsCount}-Month` : '3-Month';
     const overallColor = signalHexColor(trend.overallSignal, c);
     const isCompact = target === 'email' || target === 'canvas';
     const emailMono = 'monospace';
+    const observationsHeading = audience.redactInternalExpenses
+      ? 'Verified Partner Highlights'
+      : audience.id === 'investor'
+        ? 'Unit Economics & Growth Signals'
+        : 'Verified Financial Observations';
+    const recsHeading =
+      audience.id === 'ceo'
+        ? 'Executive Operating Actions'
+        : audience.id === 'investor'
+          ? 'Value-Creation Catalysts'
+          : audience.id === 'team'
+            ? 'Team Operating Priorities'
+            : 'Analytical Recommendations';
 
     if (target === 'email') {
       return (
@@ -68,7 +82,7 @@ export const NexoraInsightsBlock = defineElement({
               style={{
                 backgroundColor: c.surface,
                 border: { width: 1, style: 'solid', color: c.border },
-                borderRadius: 8,
+                borderRadius: radius,
                 padding: [16, 16],
                 gap: 10,
               }}
@@ -79,7 +93,7 @@ export const NexoraInsightsBlock = defineElement({
                   fontSize: 10,
                   fontWeight: 700,
                   textTransform: 'uppercase',
-                  color: c.accent,
+                  color: c.accentInk,
                 }}
               >
                 {`Trend Analysis · Rolling ${windowLabel} Benchmark (${trend.windowPeriodLabel})`}
@@ -158,13 +172,13 @@ export const NexoraInsightsBlock = defineElement({
             style={{
               backgroundColor: c.surface,
               border: { width: 1, style: 'solid', color: c.border },
-              borderRadius: 8,
+              borderRadius: radius,
               padding: [16, 16],
               gap: 8,
             }}
           >
             <Heading level={3} style={{ fontSize: 16, fontWeight: 700, color: c.text }}>
-              Verified Financial Observations
+              {observationsHeading}
             </Heading>
             <Table
               style={{
@@ -227,13 +241,13 @@ export const NexoraInsightsBlock = defineElement({
             style={{
               backgroundColor: c.elevated,
               border: { width: 1, style: 'solid', color: c.border },
-              borderRadius: 8,
+              borderRadius: radius,
               padding: [16, 16],
               gap: 8,
             }}
           >
             <Heading level={3} style={{ fontSize: 16, fontWeight: 700, color: c.text }}>
-              Rule-Derived Strategic Recommendations
+              {recsHeading}
             </Heading>
             <Table
               style={{
@@ -249,7 +263,8 @@ export const NexoraInsightsBlock = defineElement({
                       style={{
                         fontFamily: theme.typography.monoFont,
                         fontSize: 10,
-                        color: c.accent,
+                        fontWeight: 700,
+                        color: c.accentInk,
                       }}
                     >
                       {`0${i + 1} · ${rec.priority} Priority · ${rec.basis}`}
@@ -278,7 +293,7 @@ export const NexoraInsightsBlock = defineElement({
             style={{
               backgroundColor: c.surface,
               border: { width: 1, style: 'solid', color: c.border },
-              borderRadius: 8,
+              borderRadius: radius,
               padding: isCompact ? [18, 18] : [22, 24],
               gap: 14,
             }}
@@ -292,7 +307,7 @@ export const NexoraInsightsBlock = defineElement({
                     fontWeight: 700,
                     letterSpacing: 1.0,
                     textTransform: 'uppercase',
-                    color: c.accent,
+                    color: c.accentInk,
                   }}
                 >
                   {`Trend Analysis · Rolling ${windowLabel} Benchmark (${trend.windowPeriodLabel})`}
@@ -448,7 +463,7 @@ export const NexoraInsightsBlock = defineElement({
             style={{
               backgroundColor: c.surface,
               border: { width: 1, style: 'solid', color: c.border },
-              borderRadius: 8,
+              borderRadius: radius,
               padding: isCompact ? [18, 18] : [22, 24],
               gap: 14,
             }}
@@ -464,7 +479,7 @@ export const NexoraInsightsBlock = defineElement({
                   color: c.text,
                 }}
               >
-                Verified Financial Observations
+                {observationsHeading}
               </Heading>
             </Column>
             <Column style={{ flex: 'none' }}>
@@ -491,7 +506,7 @@ export const NexoraInsightsBlock = defineElement({
                   style={{
                     backgroundColor: c.canvas,
                     border: { width: 1, style: 'solid', color: c.border },
-                    borderRadius: 8,
+                    borderRadius: radius,
                     padding: [14, 16],
                     gap: 8,
                   }}
@@ -572,7 +587,7 @@ export const NexoraInsightsBlock = defineElement({
             style={{
               backgroundColor: c.elevated,
               border: { width: 1, style: 'solid', color: c.border },
-              borderRadius: 8,
+              borderRadius: radius,
               padding: isCompact ? [18, 18] : [22, 24],
               gap: 12,
             }}
@@ -588,7 +603,7 @@ export const NexoraInsightsBlock = defineElement({
                   color: c.text,
                 }}
               >
-                Analytical Recommendations
+                {recsHeading}
               </Heading>
             </Column>
             <Column style={{ flex: 'none' }}>
@@ -605,7 +620,7 @@ export const NexoraInsightsBlock = defineElement({
                 style={{
                   backgroundColor: c.surface,
                   border: { width: 1, style: 'solid', color: c.border },
-                  borderRadius: 8,
+                  borderRadius: radius,
                   padding: [14, 16],
                   gap: 5,
                 }}
@@ -614,7 +629,8 @@ export const NexoraInsightsBlock = defineElement({
                   style={{
                     fontFamily: theme.typography.monoFont,
                     fontSize: 11,
-                    color: c.accent,
+                    fontWeight: 700,
+                    color: c.accentInk,
                   }}
                 >
                   {`0${idx + 1} · ${rec.priority} Priority · ${rec.basis}`}
